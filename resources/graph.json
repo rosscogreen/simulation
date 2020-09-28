@@ -1,0 +1,272 @@
+{
+    "west": {
+        "upstream_onramp0_merge_start": [
+            "[1] west -> upstream_onramp0_merge_start, upstream"
+        ],
+        "east": [
+            "[2] west -> east, upstream",
+            "[3] west -> east, upstream",
+            "[4] west -> east, upstream",
+            "[5] west -> east, upstream",
+            "[6] west -> east, upstream",
+            "[7] west -> east, upstream"
+        ],
+        "forbidden_upstream_onramp0_merge_start": [
+            "[8] west -> forbidden_upstream_onramp0_merge_start, upstream"
+        ]
+    },
+    "upstream_onramp0_merge_start": {
+        "upstream_onramp0_merge_end": [
+            "[1] upstream_onramp0_merge_start -> upstream_onramp0_merge_end, upstream",
+            "[0] upstream_onramp0_merge_start -> upstream_onramp0_merge_end, upstream"
+        ]
+    },
+    "upstream_onramp0_merge_end": {
+        "upstream_offramp0_merge_start": [
+            "[1] upstream_onramp0_merge_end -> upstream_offramp0_merge_start, upstream"
+        ]
+    },
+    "upstream_offramp0_merge_start": {
+        "upstream_offramp0_merge_end": [
+            "[1] upstream_offramp0_merge_start -> upstream_offramp0_merge_end, upstream",
+            "[0] upstream_offramp0_merge_start -> upstream_offramp0_merge_end, upstream"
+        ]
+    },
+    "upstream_offramp0_merge_end": {
+        "upstream_onramp1_merge_start": [
+            "[1] upstream_offramp0_merge_end -> upstream_onramp1_merge_start, upstream"
+        ],
+        "upstream_offramp0_converge_end": [
+            "[0] upstream_offramp0_merge_end -> upstream_offramp0_converge_end, upstream"
+        ]
+    },
+    "upstream_onramp1_merge_start": {
+        "upstream_onramp1_merge_end": [
+            "[1] upstream_onramp1_merge_start -> upstream_onramp1_merge_end, upstream",
+            "[0] upstream_onramp1_merge_start -> upstream_onramp1_merge_end, upstream"
+        ]
+    },
+    "upstream_onramp1_merge_end": {
+        "upstream_offramp1_merge_start": [
+            "[1] upstream_onramp1_merge_end -> upstream_offramp1_merge_start, upstream"
+        ]
+    },
+    "upstream_offramp1_merge_start": {
+        "upstream_offramp1_merge_end": [
+            "[1] upstream_offramp1_merge_start -> upstream_offramp1_merge_end, upstream",
+            "[0] upstream_offramp1_merge_start -> upstream_offramp1_merge_end, upstream"
+        ]
+    },
+    "upstream_offramp1_merge_end": {
+        "east": [
+            "[1] upstream_offramp1_merge_end -> east, upstream"
+        ],
+        "upstream_offramp1_converge_end": [
+            "[0] upstream_offramp1_merge_end -> upstream_offramp1_converge_end, upstream"
+        ]
+    },
+    "east": {
+        "west": [
+            "[8] east -> west, downstream",
+            "[6] east -> west, downstream",
+            "[5] east -> west, downstream",
+            "[4] east -> west, downstream",
+            "[3] east -> west, downstream",
+            "[2] east -> west, downstream",
+            "[1] east -> west, downstream"
+        ],
+        "downstream_onramp0_merge_start": [
+            "[1] east -> downstream_onramp0_merge_start, downstream"
+        ]
+    },
+    "forbidden_upstream_onramp0_merge_start": {
+        "forbidden_upstream_onramp0_merge_end": [
+            "[8] forbidden_upstream_onramp0_merge_start -> forbidden_upstream_onramp0_merge_end, upstream"
+        ]
+    },
+    "downstream_onramp0_merge_start": {
+        "downstream_onramp0_merge_end": [
+            "[1] downstream_onramp0_merge_start -> downstream_onramp0_merge_end, downstream",
+            "[0] downstream_onramp0_merge_start -> downstream_onramp0_merge_end, downstream"
+        ]
+    },
+    "forbidden_upstream_onramp0_merge_end": {
+        "forbidden_upstream_offramp1_merge_start": [
+            "[8] forbidden_upstream_onramp0_merge_end -> forbidden_upstream_offramp1_merge_start, upstream"
+        ]
+    },
+    "forbidden_upstream_offramp1_merge_start": {
+        "forbidden_upstream_offramp1_merge_end": [
+            "[8] forbidden_upstream_offramp1_merge_start -> forbidden_upstream_offramp1_merge_end, upstream"
+        ]
+    },
+    "downstream_onramp0_merge_end": {
+        "downstream_offramp0_merge_start": [
+            "[1] downstream_onramp0_merge_end -> downstream_offramp0_merge_start, downstream"
+        ]
+    },
+    "downstream_offramp0_merge_start": {
+        "downstream_offramp0_merge_end": [
+            "[1] downstream_offramp0_merge_start -> downstream_offramp0_merge_end, downstream",
+            "[0] downstream_offramp0_merge_start -> downstream_offramp0_merge_end, downstream"
+        ]
+    },
+    "forbidden_upstream_offramp1_merge_end": {
+        "forbidden_upstream_onramp1_merge_start": [
+            "[8] forbidden_upstream_offramp1_merge_end -> forbidden_upstream_onramp1_merge_start, upstream"
+        ]
+    },
+    "forbidden_upstream_onramp1_merge_start": {
+        "forbidden_upstream_onramp1_merge_end": [
+            "[8] forbidden_upstream_onramp1_merge_start -> forbidden_upstream_onramp1_merge_end, upstream"
+        ]
+    },
+    "downstream_offramp0_merge_end": {
+        "downstream_onramp1_merge_start": [
+            "[1] downstream_offramp0_merge_end -> downstream_onramp1_merge_start, downstream"
+        ],
+        "downstream_offramp0_converge_end": [
+            "[0] downstream_offramp0_merge_end -> downstream_offramp0_converge_end, downstream"
+        ]
+    },
+    "downstream_onramp1_merge_start": {
+        "downstream_onramp1_merge_end": [
+            "[1] downstream_onramp1_merge_start -> downstream_onramp1_merge_end, downstream",
+            "[0] downstream_onramp1_merge_start -> downstream_onramp1_merge_end, downstream"
+        ]
+    },
+    "forbidden_upstream_onramp1_merge_end": {
+        "forbidden_upstream_offramp2_merge_start": [
+            "[8] forbidden_upstream_onramp1_merge_end -> forbidden_upstream_offramp2_merge_start, upstream"
+        ]
+    },
+    "forbidden_upstream_offramp2_merge_start": {
+        "forbidden_upstream_offramp2_merge_end": [
+            "[8] forbidden_upstream_offramp2_merge_start -> forbidden_upstream_offramp2_merge_end, upstream"
+        ]
+    },
+    "downstream_onramp1_merge_end": {
+        "downstream_offramp1_merge_start": [
+            "[1] downstream_onramp1_merge_end -> downstream_offramp1_merge_start, downstream"
+        ]
+    },
+    "downstream_offramp1_merge_start": {
+        "downstream_offramp1_merge_end": [
+            "[1] downstream_offramp1_merge_start -> downstream_offramp1_merge_end, downstream",
+            "[0] downstream_offramp1_merge_start -> downstream_offramp1_merge_end, downstream"
+        ]
+    },
+    "forbidden_upstream_offramp2_merge_end": {
+        "east": [
+            "[8] forbidden_upstream_offramp2_merge_end -> east, upstream"
+        ]
+    },
+    "downstream_offramp1_merge_end": {
+        "west": [
+            "[1] downstream_offramp1_merge_end -> west, downstream"
+        ],
+        "downstream_offramp1_converge_end": [
+            "[0] downstream_offramp1_merge_end -> downstream_offramp1_converge_end, downstream"
+        ]
+    },
+    "upstream_onramp0_runway_start": {
+        "upstream_onramp0_converge_start": [
+            "[0] upstream_onramp0_runway_start -> upstream_onramp0_converge_start, upstream"
+        ]
+    },
+    "upstream_onramp0_converge_start": {
+        "upstream_onramp0_merge_start": [
+            "[0] upstream_onramp0_converge_start -> upstream_onramp0_merge_start, upstream"
+        ]
+    },
+    "upstream_onramp0_barrier_start": {
+        "upstream_onramp0_barrier_end": [
+            "[0] upstream_onramp0_barrier_start -> upstream_onramp0_barrier_end, upstream"
+        ]
+    },
+    "downstream_onramp0_runway_start": {
+        "downstream_onramp0_converge_start": [
+            "[0] downstream_onramp0_runway_start -> downstream_onramp0_converge_start, downstream"
+        ]
+    },
+    "downstream_onramp0_converge_start": {
+        "downstream_onramp0_merge_start": [
+            "[0] downstream_onramp0_converge_start -> downstream_onramp0_merge_start, downstream"
+        ]
+    },
+    "downstream_onramp0_barrier_start": {
+        "downstream_onramp0_barrier_end": [
+            "[0] downstream_onramp0_barrier_start -> downstream_onramp0_barrier_end, downstream"
+        ]
+    },
+    "upstream_onramp1_runway_start": {
+        "upstream_onramp1_converge_start": [
+            "[0] upstream_onramp1_runway_start -> upstream_onramp1_converge_start, upstream"
+        ]
+    },
+    "upstream_onramp1_converge_start": {
+        "upstream_onramp1_merge_start": [
+            "[0] upstream_onramp1_converge_start -> upstream_onramp1_merge_start, upstream"
+        ]
+    },
+    "upstream_onramp1_barrier_start": {
+        "upstream_onramp1_barrier_end": [
+            "[0] upstream_onramp1_barrier_start -> upstream_onramp1_barrier_end, upstream"
+        ]
+    },
+    "downstream_onramp1_runway_start": {
+        "downstream_onramp1_converge_start": [
+            "[0] downstream_onramp1_runway_start -> downstream_onramp1_converge_start, downstream"
+        ]
+    },
+    "downstream_onramp1_converge_start": {
+        "downstream_onramp1_merge_start": [
+            "[0] downstream_onramp1_converge_start -> downstream_onramp1_merge_start, downstream"
+        ]
+    },
+    "downstream_onramp1_barrier_start": {
+        "downstream_onramp1_barrier_end": [
+            "[0] downstream_onramp1_barrier_start -> downstream_onramp1_barrier_end, downstream"
+        ]
+    },
+    "upstream_offramp0_barrier_start": {
+        "upstream_offramp0_barrier_end": [
+            "[0] upstream_offramp0_barrier_start -> upstream_offramp0_barrier_end, upstream"
+        ]
+    },
+    "upstream_offramp0_converge_end": {
+        "upstream_offramp0_runway_end": [
+            "[0] upstream_offramp0_converge_end -> upstream_offramp0_runway_end, upstream"
+        ]
+    },
+    "downstream_offramp0_barrier_start": {
+        "downstream_offramp0_barrier_end": [
+            "[0] downstream_offramp0_barrier_start -> downstream_offramp0_barrier_end, downstream"
+        ]
+    },
+    "downstream_offramp0_converge_end": {
+        "downstream_offramp0_runway_end": [
+            "[0] downstream_offramp0_converge_end -> downstream_offramp0_runway_end, downstream"
+        ]
+    },
+    "upstream_offramp1_barrier_start": {
+        "upstream_offramp1_barrier_end": [
+            "[0] upstream_offramp1_barrier_start -> upstream_offramp1_barrier_end, upstream"
+        ]
+    },
+    "upstream_offramp1_converge_end": {
+        "upstream_offramp1_runway_end": [
+            "[0] upstream_offramp1_converge_end -> upstream_offramp1_runway_end, upstream"
+        ]
+    },
+    "downstream_offramp1_barrier_start": {
+        "downstream_offramp1_barrier_end": [
+            "[0] downstream_offramp1_barrier_start -> downstream_offramp1_barrier_end, downstream"
+        ]
+    },
+    "downstream_offramp1_converge_end": {
+        "downstream_offramp1_runway_end": [
+            "[0] downstream_offramp1_converge_end -> downstream_offramp1_runway_end, downstream"
+        ]
+    }
+}
