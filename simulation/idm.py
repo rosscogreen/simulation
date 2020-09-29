@@ -2,7 +2,6 @@ import numpy as np
 
 from simulation import utils
 from simulation.constants import CAR_LENGTH
-from simulation.road_objects import RoadObject
 
 
 class IDM(object):
@@ -50,7 +49,7 @@ class IDM(object):
 
     @classmethod
     def calc_acceleration(cls, bwd: "Car", fwd: "Car" = None) -> float:
-        if not bwd or isinstance(bwd, RoadObject):
+        if bwd is None:
             return 0
 
         v0 = max(bwd.speed, 0)

@@ -6,69 +6,76 @@ from typing import List, Optional, Iterable, Tuple, DefaultDict, Dict, Set
 import numpy as np
 
 from simulation.car import Car
-from simulation.custom_types import Route, LanesList, Origin, Destination, Index, Path, LaneIndex
+from simulation.custom_types import Route, Path, LaneIndex
 from simulation.lanes import AbstractLane
-from simulation.road_factory.constants import WEST_NODE, EAST_NODE
+from simulation.config import WEST_NODE, EAST_NODE
 
 logger = logging.getLogger(__name__)
 
 
 class RoadNetwork(object):
-    graph: DefaultDict[Origin, DefaultDict[Destination, Dict[Index, AbstractLane]]]
+    graph: DefaultDict[str, DefaultDict[str, Dict[int, AbstractLane]]]
 
     def __init__(self):
         self.graph = defaultdict(lambda: defaultdict(dict))
 
-        self.upstream_source_lanes: LanesList = []
-        self.downstream_source_lanes: LanesList = []
+        self.upstream_source_lanes: List[AbstractLane] = []
+        self.downstream_source_lanes: List[AbstractLane] = []
 
-        self.upstream_sink_lanes: LanesList = []
-        self.downstream_sink_lanes: LanesList = []
+        self.upstream_sink_lanes: List[AbstractLane] = []
+        self.downstream_sink_lanes: List[AbstractLane] = []
 
-        self.upstream_sink_destinations: Set[Destination] = set()
-        self.downstream_sink_destinations: Set[Destination] = set()
+        self.upstream_sink_destinations: Set[str] = set()
+        self.downstream_sink_destinations: Set[str] = set()
 
-        self.upstream_source_origins: Set[Origin] = set()
-        self.downstream_source_origins: Set[Origin] = set()
+        self.upstream_source_origins: Set[str] = set()
+        self.downstream_source_origins: Set[str] = set()
 
         self.upstream_lane_list = []
         self.downstream_lane_list = []
 
     def add_lane(self, lane: "AbstractLane"):
-        self.graph[lane.origin][lane.destination][lane.index] = lane
+        o,d,i = lane.index
+        self.graph[o][d][i] = lane
 
         if lane.upstream:
             self.upstream_lane_list.append(lane)
             if lane.is_source:
                 self.upstream_source_lanes.append(lane)
-                self.upstream_source_origins.add(lane.origin)
+                self.upstream_source_origins.add(o)
             elif lane.is_sink:
                 self.upstream_sink_lanes.append(lane)
-                self.upstream_sink_destinations.add(lane.destination)
+                self.upstream_sink_destinations.add(d)
         else:
             self.downstream_lane_list.append(lane)
             if lane.is_source:
                 self.downstream_source_lanes.append(lane)
-                self.downstream_source_origins.add(lane.origin)
+                self.downstream_source_origins.add(o)
             elif lane.is_sink:
                 self.downstream_sink_lanes.append(lane)
-                self.downstream_sink_destinations.add(lane.destination)
+                self.downstream_sink_destinations.add(d)
 
-    def add_lanes(self, lanes: LanesList) -> None:
+    def add_lanes(self, lanes: List[AbstractLane]) -> None:
         for lane in lanes:
             self.add_lane(lane)
 
-    def get_lanes(self, origin: Origin, destination: Destination) -> LanesList:
+    def get_lanes(self, origin: str, destination: str) -> List[AbstractLane]:
         """ Return all lanes from origin -> destination """
         return list(self.graph[origin][destination].values())
 
+    def get_active_lanes(self, origin, destination) -> List[AbstractLane]:
+        return [l for l in self.get_lanes(origin, destination) if not l.forbidden]
+
+    def get_forbidden_lanes(self, origin, destination) -> List[AbstractLane]:
+        return [l for l in self.get_lanes(origin, destination) if l.forbidden]
+
     @lru_cache()
-    def get_lane(self, lane_index: LaneIndex) -> Optional["AbstractLane"]:
+    def get_lane(self, index: LaneIndex) -> Optional[AbstractLane]:
         """
             Get the lane geometry corresponding to a given index in the road_network network.
         :return: the corresponding lane geometry.
         """
-        o, d, i = lane_index
+        o, d, i = index
 
         try:
             return self.graph[o][d][i]
@@ -83,13 +90,13 @@ class RoadNetwork(object):
         return min(lanes, key=lambda l: l.distance(pos))
 
     @lru_cache()
-    def get_lanes_for_index(self, upstream: bool, index: int) -> List[AbstractLane]:
+    def get_lanes_for_index(self, upstream: bool, i: int) -> List[AbstractLane]:
         lanes = self.upstream_lane_list if upstream else self.downstream_lane_list
-        return [lane for lane in lanes if lane.index == index]
+        return [lane for lane in lanes if lane.index[2] == i]
 
     @lru_cache()
-    def get_lane_at_position(self, upstream: bool, index: int, x) -> AbstractLane:
-        lanes = self.get_lanes_for_index(upstream, index)
+    def get_lane_at_position(self, upstream: bool, i: int, x) -> AbstractLane:
+        lanes = self.get_lanes_for_index(upstream, i)
         for lane in lanes:
             x1 = lane.start_pos[0] if upstream else lane.end_pos[0]
             x2 = lane.end_pos[0] if upstream else lane.start_pos[0]
@@ -97,14 +104,14 @@ class RoadNetwork(object):
                 return lane
 
     @lru_cache()
-    def side_lanes(self, lane: "AbstractLane", x_pos=None) -> LanesList:
+    def side_lanes(self, lane: "AbstractLane", x_pos=None) -> List[AbstractLane]:
         """ Returns lanes to left and right of given lane """
         if lane.is_offramp:
             return []
 
         lanes = []
 
-        o, d, i = lane.lane_index
+        o, d, i = lane.index
         right_o, right_d, right_i = o, d, i + 1
         left_o, left_d, left_i = o, d, i - 1
 
@@ -119,9 +126,9 @@ class RoadNetwork(object):
             if not lane.is_next_to_offramp:
                 left_o, left_d = None, None
 
-        if i == 2:
-            lane = self.get_lane_at_position(upstream, 1, x_pos)
-            left_o, left_d, left_i = lane.lane_index
+        # if i == 2:
+        #     left_lane = self.get_lane_at_position(upstream, 1, x_pos)
+        #     left_o, left_d, left_i = left_lane.index
 
         try:
             lanes.append(self.graph[right_o][right_d][right_i])
@@ -136,7 +143,7 @@ class RoadNetwork(object):
         return lanes
 
     @lru_cache()
-    def bfs_paths(self, start: Destination, goal: Destination) -> List[Path]:
+    def bfs_paths(self, start: str, goal: str) -> List[Path]:
         """
         Breadth-first search of all routes from start to goal.
 
@@ -176,7 +183,7 @@ class RoadNetwork(object):
         if l1[1] == l2[0] and (not same_lane or l1[2] == l2[2]):
             return True
 
-        if same_lane and l1.index not in graph[l1[0]][l1[1]]:
+        if same_lane and l1[2] not in graph[l1[0]][l1[1]]:
             return False
 
         destinations = self.upstream_sink_destinations | self.downstream_sink_destinations
@@ -188,33 +195,31 @@ class RoadNetwork(object):
                 r = route[0]
                 if r[:2] == l1[:2]:
                     return self.is_connected(l1, l2, same_lane, route[1:], depth)
-                if l1.destination == r.origin:
+                if l1[1] == r[0]:
                     return self.is_connected(r, l2, same_lane, route[1:], depth - 1)
             else:
                 o, d, i = l1
-                return any([self.is_connected(LaneIndex(d, d_, i), l2, same_lane, route, depth - 1)
+                return any([self.is_connected((d, d_, i), l2, same_lane, route, depth - 1)
                             for d_ in graph.get(d, {})])
 
         return False
 
     @lru_cache()
     def get_path_from_lane_to_destination(self, lane, destination):
-        lane_index = lane.lane_index
-        path = [lane_index]
+        o,d,i = lane.index
+        path = [lane.index]
 
-        if lane.destination == destination:
+        if d == destination:
             return path
 
         if lane.is_sink:
             return []
 
-        index = lane.index
-
-        for next_destination, lanes in self.graph[lane_index.destination].items():
-            if index in lanes:
-                lane = lanes[index]
-            elif index + 1 in lanes:
-                lane = lanes[index + 1]
+        for next_destination, lanes in self.graph[d].items():
+            if i in lanes:
+                lane = lanes[i]
+            elif i + 1 in lanes:
+                lane = lanes[i + 1]
 
             return path + self.get_path_from_lane_to_destination(lane, destination)
 
@@ -244,8 +249,7 @@ class RoadNetwork(object):
         if lane.is_sink:
             return lane
 
-        lane_index = lane.lane_index
-        o, d, i = lane_index
+        o, d, i = lane.index
 
         graph = self.graph[d]
         d_list = list(graph)
@@ -253,7 +257,7 @@ class RoadNetwork(object):
         d_next = None
 
         # Finished first leg of route -> remove it
-        if route and route[0][:2] == lane_index[:2]:
+        if route and route[0][:2] == lane.index[:2]:
             route.pop(0)
 
         if route and d == route.origin:

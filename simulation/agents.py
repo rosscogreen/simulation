@@ -39,15 +39,6 @@ class HeuristicAgent(Agent):
         return 0
 
 
-class LinearAgent(Agent):
-
-    def __init__(self, env):
-        super(LinearAgent, self).__init__(env)
-
-    def act(self, obs) -> int:
-        return 0
-
-
 class ReinforcementLearningAgent(Agent):
 
     def __init__(self, env):

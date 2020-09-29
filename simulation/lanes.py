@@ -1,40 +1,46 @@
-from abc import abstractmethod, ABC
-from typing import Tuple
 import re
+from abc import abstractmethod, ABC
+from typing import Tuple, List
+
 import numpy as np
 
-from simulation.config import LANE_WIDTH
-from simulation.constants import CAR_LENGTH, HALF_CAR_LENGTH
-from simulation.custom_types import Vector, LineType, Node, AngleRadians, LaneIndex, Origin, Destination, Index
+from simulation.config import LANE_WIDTH, HIGHWAY_SPEED_LIMIT
+from simulation.constants import CAR_LENGTH
+from simulation.custom_types import Vector, LineType, LaneIndex
 
 onramp_pattern = re.compile(r'^(up|down)stream_onramp[\d]_merge_(start|end)$')
 offramp_pattern = re.compile(r'^(up|down)stream_offramp[\d]_(merge|converge)_(start|end)$')
 
 
-# offramp_pattern = re.compile(r'^(up|down)stream_offramp[\d]_merge_(start|end)$')
-
-
 class AbstractLane(ABC):
     """A lane on the road, described by its central curve."""
+
+    CL = LineType.CONTINUOUS_LINE
+    SL = LineType.STRIPED
+    UL = LineType.CONTINUOUS
+    NL = LineType.NONE
 
     # Defaults
     start_pos = np.array([0, 0])
     end_pos = np.array([0, 0])
+
     length: float = 0
     width: float = LANE_WIDTH
-    highway_speed_limit: float = 100.0 / 3.6
-    ramp_speed_limit: float = 70.0 / 3.6
-    left_line: LineType = LineType.NONE
-    right_line: LineType = LineType.NONE
+
+    line_types = [NL, NL]
+
     is_source: bool = False
     is_sink: bool = False
+
     upstream: bool = False
     forbidden: bool = False
-    origin: Origin = ''
-    destination: Destination = ''
-    index: Index = 0
-    lane_index: "LaneIndex" = LaneIndex(origin, destination, index)
-    speed_limit: float = highway_speed_limit
+
+    speed_limit: float = HIGHWAY_SPEED_LIMIT
+
+    index: LaneIndex = None
+
+    path_index: LaneIndex = index
+    path_start_pos = start_pos
 
     is_onramp: bool = False
     is_offramp: bool = False
@@ -53,6 +59,10 @@ class AbstractLane(ABC):
         :param lateral: lateral lane coordinate i.e. distance adjacent to lane in [m]
         :return: the corresponding world position (x,y) [m]
         """
+        raise NotImplementedError()
+
+    @abstractmethod
+    def path_position(self, longitudinal: float, lateral: float) -> np.ndarray:
         raise NotImplementedError()
 
     @abstractmethod
@@ -75,17 +85,21 @@ class AbstractLane(ABC):
         """
         raise NotImplementedError()
 
-    def same_lane(self, other):
-        return self.lane_index == other.lane_index
+    @abstractmethod
+    def path_coordinates(self, position: np.ndarray) -> Vector:
+        raise NotImplementedError()
 
-    def same_road(self, other):
-        return self.lane_index[:2] == other.lane_index[:2]
+    def same_lane(self, other: "AbstractLane"):
+        return self.index == other.index
 
-    def leading_to_lane(self, other):
-        return self.destination == other.origin and self.index == other.index
+    def same_road(self, other: "AbstractLane"):
+        return self.index[:2] == other.index[:2]
 
-    def leading_to_road(self, other):
-        return self.destination == other.origin
+    def leading_to_lane(self, other: "AbstractLane"):
+        return self.index[1] == other.index[0] and self.index[2] == other.index[2]
+
+    def leading_to_road(self, other: "AbstractLane"):
+        return self.index[1] == other.index[0]
 
     def on_lane(self,
                 position: np.ndarray,
@@ -128,7 +142,7 @@ class AbstractLane(ABC):
         """ True is car half way point is past end_pos """
         if not longitudinal:
             longitudinal = self.s(position)
-        return longitudinal + HALF_CAR_LENGTH > self.length
+        return longitudinal + (CAR_LENGTH / 2) > self.length
 
     def distance(self, position):
         """Compute the L1 distance [m] from a position to the lane."""
@@ -136,10 +150,10 @@ class AbstractLane(ABC):
         return abs(r) + max(s - self.length, 0) + max(0 - s, 0)
 
     def __repr__(self):
-        up_down = 'Upstream' if self.upstream else 'Downstream'
+        dir = 'U' if self.upstream else 'D'
         x1, y1 = self.start_pos.astype(int)
         x2, y2 = self.end_pos.astype(int)
-        return f'[{self.index}] {self.origin} -> {self.destination} ({up_down})\n[{x1}, {y1}] -> [{x2}, {y2}]'
+        return f'{self.index} ({dir})\nstart=[{x1}, {y1}] end=[{x2}, {y2}]'
 
 
 class StraightLane(AbstractLane):
@@ -148,23 +162,34 @@ class StraightLane(AbstractLane):
     def __init__(self,
                  start_pos: Vector,
                  end_pos: Vector,
-                 origin: Origin,
-                 destination: Destination,
-                 index: Index = 0,
+                 index: LaneIndex,
+                 line_types: List[LineType] = None,
                  forbidden: bool = False,
-                 speed_limit: float = 28,
+                 speed_limit: float = HIGHWAY_SPEED_LIMIT,
                  is_source: bool = False,
                  is_sink: bool = False,
-                 left_line=LineType.NONE,
-                 right_line=LineType.NONE) -> None:
+                 path_index: LaneIndex = None,
+                 path_start_pos = None
+                 ) -> None:
 
         self.start_pos = np.array(start_pos)
         self.end_pos = np.array(end_pos)
+        self.index = index
+
+        self.path_index = path_index or index
+        self.path_start_pos = path_start_pos or start_pos
+
+        self.speed_limit = speed_limit
+        self.is_source = is_source
+        self.is_sink = is_sink
+
+        if line_types is not None:
+            self.line_types = line_types
 
         delta = self.end_pos - self.start_pos
-        x,y = delta
+        x, y = delta
 
-        self.heading: float = np.arctan2(y, x) # radians
+        self.heading: float = np.arctan2(y, x)  # radians
         self.length = np.linalg.norm(delta)
         self.direction: np.ndarray = delta / self.length
         self.direction_lateral: np.ndarray = np.flip(self.direction) * [-1, 1]
@@ -172,50 +197,46 @@ class StraightLane(AbstractLane):
         self.upstream: bool = x >= 0
         self.forbidden = forbidden
 
-        self.origin = origin
-        self.destination = destination
-        self.index = index
-        self.lane_index = LaneIndex(origin, destination, index)
-
-        self.speed_limit = speed_limit
-        self.is_source = is_source
-        self.is_sink = is_sink
-
-        self.left_line = left_line
-        self.right_line = right_line
-
         self.set_lane_settings()
 
     def set_lane_settings(self):
-        o, d, i = self.lane_index
+        o, d, i = self.index
 
         origin_onramp_match = onramp_pattern.match(o)
         destination_onramp_match = onramp_pattern.match(d)
         origin_offramp_match = offramp_pattern.match(o)
 
         self.is_onramp = origin_onramp_match is not None and i == 0
-        self.onramp_merge_to_lane_index = LaneIndex(o, d, 1) if self.is_onramp else None
+        self.onramp_merge_to_lane_index = (o, d, 1) if self.is_onramp else None
 
         self.is_offramp = origin_offramp_match is not None and i == 0
         self.is_next_to_offramp = origin_offramp_match is not None and i == 1
-        self.offramp_lane_index = LaneIndex(o, d, 0) if self.is_next_to_offramp else None
+        self.offramp_lane_index = (o, d, 0) if self.is_next_to_offramp else None
 
         # Before merge lane or next to merge lane
         if destination_onramp_match and i == 1:
             if destination_onramp_match[2] == 'start':
-                self.priority_lane_index = LaneIndex(d, d.replace('start', 'end'), 0)
+                self.priority_lane_index = (d, d.replace('start', 'end'), 0)
             else:
-                self.priority_lane_index = LaneIndex(d.replace('end', 'start'), d, 0)
-
+                self.priority_lane_index = (d.replace('end', 'start'), d, 0)
 
     def position(self, longitudinal: float, lateral: float) -> np.ndarray:
         return self.start_pos + (longitudinal * self.direction) + (lateral * self.direction_lateral)
+
+    def path_position(self, longitudinal: float, lateral: float) -> np.ndarray:
+        return self.path_start_pos + (longitudinal * self.direction) + (lateral * self.direction_lateral)
 
     def heading_at(self, longitudinal: float) -> float:
         return self.heading
 
     def local_coordinates(self, position: np.ndarray) -> Vector:
         delta = position - self.start_pos
+        longitudinal = np.dot(delta, self.direction)
+        lateral = np.dot(delta, self.direction_lateral)
+        return float(longitudinal), float(lateral)
+
+    def path_coordinates(self, position: np.ndarray) -> Vector:
+        delta = position - self.path_start_pos
         longitudinal = np.dot(delta, self.direction)
         lateral = np.dot(delta, self.direction_lateral)
         return float(longitudinal), float(lateral)
@@ -227,18 +248,15 @@ class SineLane(StraightLane):
     def __init__(self,
                  start_pos: Vector,
                  end_pos: Vector,
-                 amplitude: float,
-                 pulsation: float,
-                 phase: float,
-                 origin: Node,
-                 destination: Node,
-                 index: int = 0,
+                 index,
+                 line_types: List[LineType] = None,
+                 amplitude: float = 0,
+                 pulsation: float = 0,
+                 phase: float = 0,
                  forbidden: bool = False,
                  speed_limit: float = 20,
                  is_source: bool = False,
-                 is_sink: bool = False,
-                 left_line=LineType.NONE,
-                 right_line=LineType.NONE) -> None:
+                 is_sink: bool = False) -> None:
         """
         New sinusoidal lane.
 
@@ -250,15 +268,12 @@ class SineLane(StraightLane):
         """
         super().__init__(start_pos=start_pos,
                          end_pos=end_pos,
-                         origin=origin,
-                         destination=destination,
                          index=index,
                          forbidden=forbidden,
                          speed_limit=speed_limit,
                          is_source=is_source,
                          is_sink=is_sink,
-                         left_line=left_line,
-                         right_line=right_line)
+                         line_types=line_types)
         self.amplitude = amplitude
         self.pulsation = pulsation
         self.phase = phase

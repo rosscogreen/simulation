@@ -1,21 +1,18 @@
 import logging
 from functools import lru_cache
 from typing import Optional
-from collections import defaultdict
 
 from gym.utils import seeding
 
 from simulation.car import Car
-from simulation.constants import MIN_INSERTION_GAP
-from simulation.custom_types import LaneIndex, CL, SL
-from simulation.graphics.car import Cars
+from simulation.config import WEST_NODE, EAST_NODE
+from simulation.constants import CAR_LENGTH, MIN_INSERTION_GAP
+from simulation.custom_types import CL, SL
+from simulation.detector import Detectors
+from simulation.graphics import Cars
 from simulation.idm import IDM
 from simulation.lanes import AbstractLane
-from simulation.metrics import RoadMetrics
 from simulation.network import RoadNetwork
-from simulation.road_factory.constants import WEST_NODE, EAST_NODE
-from simulation.road_objects import Obstacle
-from simulation.detector import Detector
 
 logger = logging.getLogger(__name__)
 
@@ -23,68 +20,55 @@ VERBOSE = 0
 
 
 class Road(object):
+    east = 'east'
+    west = 'west'
+
+    CAR_HALF_LENGTH = CAR_LENGTH / 2
 
     def __init__(self, np_random=None):
         self.network: "RoadNetwork" = RoadNetwork()
         self.cars = Cars()
-        self.obstacles = Cars()
-        self.road_objects = Cars()
-        self.metrics = RoadMetrics()
+
         self.np_random = np_random or seeding.np_random()[0]
-        self.num_lanes = 8
-        self.num_upstream = 4
-        self.upstream_wait = 0
-        self.downstream_wait = 0
-        self.redraw = True
+
+        # Lane reversal State
         self.is_lane_reversal_in_progress: bool = False
         self.new_active_lane: Optional["AbstractLane"] = None
         self.new_forbidden_lane: Optional["AbstractLane"] = None
-        self.detectors = defaultdict(dict)
-        self.detector_bands = set()
-        self.steps = 0
-        self.time = 0
 
-    def add_detector(self, upstream: str, x: int, agg_period):
-        detector = Detector(x=x, agg_period=agg_period)
-        self.detectors[upstream][x] = detector
+        self.detectors = Detectors()
+
+        self.total_lane_count = 8
+        self.upstream_lane_count = 4
+        self.downstream_lane_count = 4
+
+        # only redraw on changes to lane structure
+        self.redraw = True
 
     def step(self, dt: float):
-        self.steps += 1
-        self.time += dt
         self.cars.update(dt)
+        self.update_position_state()
         self.lane_reversal_step()
-        self.update_detectors_step()
 
-    def update_detectors_step(self):
-        for c in self.cars:
-            if int(c.x) in self.detectors[c.upstream]:
-                self.detectors[c.upstream][int(c.x)].add_car(c)
+    def get_active_lanes(self, lanes):
+        return [lane for lane in lanes if not lane.forbidden]
 
-    def update_detectors_period(self):
-        nup = self.num_upstream
-        ndown = self.num_lanes - nup
-        obs = {}
-        for upstream, detectors in self.detectors.items():
-            for x, d in detectors.items():
-                if upstream == 'upstream':
-                    obs[upstream] = d.add_step(nup)
-                else:
-                    obs[upstream] = d.add_step(ndown)
-        return obs
-
+    def update_position_state(self):
+        for car in self.cars:
+            self.detectors.update(car)
 
     def initiate_lane_reversal(self, upstream: bool):
         self.is_lane_reversal_in_progress = True
-        n = self.num_lanes
-        i = self.num_upstream
+        n = self.total_lane_count
+        i = self.upstream_lane_count
         get_lane = self.network.get_lane
 
         if upstream:
-            self.new_active_lane = get_lane(LaneIndex(WEST_NODE, EAST_NODE, i + 1))
-            self.new_forbidden_lane = get_lane(LaneIndex(EAST_NODE, WEST_NODE, n - i))
+            self.new_active_lane = get_lane((WEST_NODE, EAST_NODE, i + 1))
+            self.new_forbidden_lane = get_lane((EAST_NODE, WEST_NODE, n - i))
         else:
-            self.new_active_lane = get_lane(LaneIndex(EAST_NODE, WEST_NODE, n - i + 1))
-            self.new_forbidden_lane = get_lane(LaneIndex(WEST_NODE, EAST_NODE, i))
+            self.new_active_lane = get_lane((EAST_NODE, WEST_NODE, n - i + 1))
+            self.new_forbidden_lane = get_lane((WEST_NODE, EAST_NODE, i))
 
         self.new_forbidden_lane.forbidden = True
         for c in self.cars_on_lane(self.new_forbidden_lane):
@@ -99,14 +83,14 @@ class Road(object):
 
         # Redraw lines
         if self.new_active_lane.upstream:
-            o, d, i = self.new_active_lane.lane_index
-            self.new_active_lane.left_line = SL
-            self.network.get_lane(LaneIndex(o, d, i + 1)).left_line = CL
+            o, d, i = self.new_active_lane.index
+            self.new_active_lane.line_types[0] = SL
+            self.network.get_lane((o, d, i + 1)).line_types[0] = CL
         else:
             # new_forbidden is upstream
-            o, d, i = self.new_forbidden_lane.lane_index
+            o, d, i = self.new_forbidden_lane.index
             self.new_forbidden_lane.left_line = CL
-            self.network.get_lane(LaneIndex(o, d, i + 1)).left_line = SL
+            self.network.get_lane((o, d, i + 1)).line_types[0] = SL
 
         self.redraw = True
         self.new_active_lane.forbidden = False
@@ -114,7 +98,9 @@ class Road(object):
         self.new_forbidden_lane = None
         self.is_lane_reversal_in_progress = False
 
-        self.num_upstream = sum([not lane.forbidden for lane in self.network.get_lanes(WEST_NODE, EAST_NODE)]) + 1
+        self.upstream_lane_count = sum(
+                [not lane.forbidden for lane in self.network.get_lanes(WEST_NODE, EAST_NODE)]) + 1
+        self.downstream_lane_count = self.total_lane_count - self.upstream_lane_count
 
     def is_lane_empty(self, lane: "AbstractLane"):
         for car in self.cars:
@@ -122,12 +108,19 @@ class Road(object):
                 return False
         return True
 
+    def spawn(self, n: int, upstream: bool):
+        lanes = self.network.upstream_source_lanes if upstream else self.network.downstream_source_lanes
+        active_lanes = self.get_active_lanes(lanes)
+        for _ in range(n):
+            lane = self.np_random.choice(active_lanes)
+            self.spawn_car_on_lane(lane)
+
     def spawn_car_on_lane(self, lane: "AbstractLane", destination=None) -> bool:
         fwd = self.first_car_on_lane(lane, merging=True)
 
         speed = lane.speed_limit
 
-        if fwd and not isinstance(fwd, Obstacle):
+        if fwd:
             gap = lane.local_coordinates(fwd.position)[0]
             if gap < MIN_INSERTION_GAP:
                 return False
@@ -168,16 +161,17 @@ class Road(object):
 
         connected = self.network.is_connected
 
-        l1, l2 = lane1.lane_index, lane2.lane_index
+        l1, l2 = lane1.index, lane2.index
         return connected(l1, l2, same_lane=True, depth=2) or connected(l2, l1, same_lane=True, depth=2)
 
-    def get_neighbours(self, car, lane=None, include_obstacles=False):
+    def get_neighbours(self, car, lane=None):
         lane = lane or car.lane
         s_me = lane.s(car.position)
 
-        cars = self.road_objects if include_obstacles else self.cars
         cars = [(c, c.s if lane.same_lane(c.lane) else lane.s(c.position))
-                for c in cars if self.lanes_connected(lane, c.lane) and c is not car]
+                for c in self.cars
+                if self.lanes_connected(lane, c.lane)
+                and c is not car]
 
         s_fwd = 500
         s_bwd = 0
@@ -194,13 +188,14 @@ class Road(object):
 
         return fwd, bwd
 
-    def get_fwd_car(self, car, lane=None, include_obstacles=False):
+    def get_fwd_car(self, car, lane=None):
         lane = lane or car.lane
         s_me = lane.s(car.position)
 
-        cars = self.road_objects if include_obstacles else self.cars
         cars = [(c, c.s if lane.same_lane(c.lane) else lane.s(c.position))
-                for c in cars if self.lanes_connected(lane, c.lane) and c is not car]
+                for c in self.cars
+                if self.lanes_connected(lane, c.lane)
+                and c is not car]
 
         s_fwd = 500
         fwd = None

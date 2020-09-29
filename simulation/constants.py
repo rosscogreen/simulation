@@ -4,8 +4,6 @@ from numpy import pi
 CAR_LENGTH = 3
 CAR_WIDTH = 3
 
-HALF_CAR_LENGTH = CAR_LENGTH / 2
-
 # Kinematics
 
 DEFAULT_SPEEDS = [23, 25]

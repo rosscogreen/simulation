@@ -1,8 +1,8 @@
 import numpy as np
-from simulation.lanes import AbstractLane
-from simulation.idm import IDM
-from simulation.road_objects import Obstacle
+
 from simulation.constants import CAR_LENGTH
+from simulation.idm import IDM
+from simulation.lanes import AbstractLane
 
 
 class Mobil(object):
@@ -48,7 +48,7 @@ class Mobil(object):
 
         calc_acc = IDM.calc_acceleration
 
-        is_right = 1 if lane.index > me.lane.index else -1
+        is_right = 1 if lane.index[2] > me.lane.index[2] else -1
         bias = is_right * right_bias
 
         # Just change
@@ -78,8 +78,8 @@ class Mobil(object):
             return False
 
         # Wrong direction
-        if me.route and np.sign(lane.index - me.target_lane.index) != np.sign(
-                me.route[0].index - me.target_lane.index):
+        if me.route and np.sign(lane.index[2] - me.target_lane.index[2]) != np.sign(
+                me.route[0][2] - me.target_lane.index[2]):
             return False
 
         if bias >= 1:

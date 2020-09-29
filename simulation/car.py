@@ -1,16 +1,13 @@
-from typing import Tuple, List, Optional
-
 import numpy as np
 import pygame
 from numpy import deg2rad
 
 from simulation import utils
 from simulation.constants import *
-from simulation.custom_types import Route, Vector, LaneIndex
+from simulation.custom_types import Route, Vector
 from simulation.idm import IDM
 from simulation.lanes import AbstractLane
 from simulation.mobil import Mobil
-from simulation.road_objects import Obstacle
 
 MIN_ANGLE = deg2rad(2)
 
@@ -19,7 +16,6 @@ PI_QUARTER = np.pi / 4
 LOADED_IMAGE = None
 
 FORCE_CHANGE_DISTANCE = 10.
-
 
 
 class Car(pygame.sprite.Sprite):
@@ -53,7 +49,7 @@ class Car(pygame.sprite.Sprite):
         self.upstream = 'upstream' if self.lane.upstream else 'downstream'
         self.target_lane = target_lane if target_lane else lane
         target_speed = target_speed or self.lane.speed_limit
-        target_speed = np.random.uniform(0.9*target_speed, target_speed)
+        target_speed = np.random.uniform(0.9 * target_speed, target_speed)
         self.target_speed = max(target_speed, 0)
         self.steering: float = 0.
         self.acceleration: float = 0.
@@ -66,6 +62,7 @@ class Car(pygame.sprite.Sprite):
         self.priority_car = None
 
         self.s = 0
+        self.s_path = 0
         self.r = 0
 
         self.image = None
@@ -88,7 +85,7 @@ class Car(pygame.sprite.Sprite):
         if speed is None:
             speed = lane.speed_limit
 
-        speed = np.random.uniform(speed*0.8, speed)
+        speed = np.random.uniform(speed * 0.8, speed)
 
         car = cls(road=road,
                   lane=lane,
@@ -97,17 +94,14 @@ class Car(pygame.sprite.Sprite):
                   speed=speed)
 
         road.cars.add(car)
-
-        road.road_objects.add(car)
-
         return car
 
     @property
     def s_remaining_on_lane(self) -> float:
-        return self.lane.length - self.s
+        return self.lane.length - self.s - self.HALF_LENGTH
 
     @property
-    def should_kill(self) -> bool:
+    def reached_destination(self) -> bool:
         return self.lane.is_sink and self.lane.after_end(self.position, longitudinal=self.s)
 
     @property
@@ -117,7 +111,8 @@ class Car(pygame.sprite.Sprite):
     @property
     def destination(self) -> np.ndarray:
         if self.route is not None and len(self.route) >= 1:
-            last_lane = self.route[-1]
+            last_lane_index = self.route[-1]
+            last_lane = self.road.network.get_lane(last_lane_index)
             return last_lane.position(last_lane.length, 0)
         else:
             return self.position
@@ -158,17 +153,23 @@ class Car(pygame.sprite.Sprite):
         velocity = self.speed * np.array([np.cos(self.heading + beta), np.sin(self.heading + beta)])
 
         self.position += velocity * dt
-        self.x = self.position[0]
         self.s, self.r = self.lane.local_coordinates(self.position)
+        self.s_path, self.r_path = self.lane.path_coordinates(self.position)
+
         self.heading += ((self.speed * np.sin(beta)) / self.HALF_LENGTH) * dt
         self.speed = max(0.01, self.speed + self.acceleration * dt)
 
-        if not self.on_lane:
-            self.on_new_lane_state_update()
+
+
+        if self.reached_destination:
+            self.kill()
+        else:
+            if not self.on_lane:
+                self.on_new_lane_state_update()
 
     def get_neighbours(self, lane=None, include_obstacles=False):
         lane = lane or self.lane
-        return self.road.get_neighbours(car=self, lane=lane, include_obstacles=include_obstacles)
+        return self.road.get_neighbours(car=self, lane=lane)
 
     def clip_speed(self):
         if self.speed > MAX_SPEED:  # Speeding
@@ -277,7 +278,7 @@ class Car(pygame.sprite.Sprite):
         if self.lane.onramp_merge_to_lane_index is not None:
             priority_lane = self.road.network.get_lane(self.lane.onramp_merge_to_lane_index)
             fwd = self.road.get_fwd_car(self, priority_lane)
-            if fwd is not None:# and fwd.speed > 3:
+            if fwd is not None:  # and fwd.speed > 3:
                 acc_yield = IDM.calc_acceleration(self, fwd)
                 acc = min(acc, acc_yield)
 
@@ -288,7 +289,7 @@ class Car(pygame.sprite.Sprite):
 
         return acc
 
-        #return float(np.clip(acc, -ACC_MAX, ACC_MAX))
+        # return float(np.clip(acc, -ACC_MAX, ACC_MAX))
 
     @property
     def should_abort_lane_change(self):
@@ -298,10 +299,9 @@ class Car(pygame.sprite.Sprite):
         if self.target_lane.forbidden:
             return True
 
-        if self.lane.same_road(self.target_lane) and self.lane.index != self.target_lane.index:
+        if self.lane.same_road(self.target_lane) and self.lane.index[2] != self.target_lane.index[2]:
             for c in self.road.cars:
                 if c is not self \
-                        and not isinstance(c, Obstacle) \
                         and c.lane != self.target_lane \
                         and c.target_lane == self.target_lane \
                         and 0 < self.lane_distance_to(c) < IDM.d_star(self, c):
@@ -349,16 +349,15 @@ class Car(pygame.sprite.Sprite):
 
                     if not potential_next_lane.forbidden:
                         if Mobil.should_change(lane=potential_next_lane,
-                                           me=self,
-                                           fwd_old=self.fwd,
-                                           bwd_old=self.bwd,
-                                           fwd_new=fwd_new,
-                                           bwd_new=bwd_new,
-                                           right_bias=self.right_bias):
+                                               me=self,
+                                               fwd_old=self.fwd,
+                                               bwd_old=self.bwd,
+                                               fwd_new=fwd_new,
+                                               bwd_new=bwd_new,
+                                               right_bias=self.right_bias):
                             self.target_lane = potential_next_lane
 
     def mandatory_merge_required(self, fwd: "Car", bwd: "Car"):
-
         if fwd is None:
             if bwd is not None and bwd is not self.priority_car:
                 self.priority_car = None
@@ -368,7 +367,7 @@ class Car(pygame.sprite.Sprite):
             if (fwd is not None and fwd is self.priority_car) or (bwd is not None and bwd is self.priority_car):
                 return
 
-        is_on_left = 1 if fwd.lane.index < self.lane.index else -1
+        is_on_left = 1 if fwd.lane.index[2] < self.lane.index[2] else -1
         bias = fwd.right_bias * is_on_left
 
         if bias >= 1 and self.lane_distance_to(fwd) >= self.GAP_THRESHOLD:
@@ -381,7 +380,7 @@ class Car(pygame.sprite.Sprite):
             return -1.
         elif self.lane.is_next_to_offramp is not None:
             return -np.random.uniform(0, 0.2)
-        elif self.lane.index == 1:
+        elif self.lane.index[2] == 1:
             return 0.2
         else:
             return 0
@@ -395,22 +394,21 @@ class Car(pygame.sprite.Sprite):
         example: plan_route_to('east')
         """
 
-        if self.lane.destination == destination:
-            self.route = [self.lane.lane_index]
+        if self.lane.index[2] == destination:
+            self.route = [self.lane.index]
             return self
 
         try:
-            path = self.road.network.shortest_path(self.lane.destination, destination)
+            path = self.road.network.shortest_path(self.lane.index[2], destination)
         except KeyError:
             path = []
 
-        self.route = [self.lane.lane_index]
+        self.route = [self.lane.index]
 
         for i in range(len(path) - 1):
             origin = path[i]
             destination = path[i + 1]
-            lane_index = LaneIndex(origin=origin, destination=destination, index=None)
-            self.route.append(lane_index)
+            self.route.append((origin, destination, None))
 
             if self.lane.upstream and destination in self.road.network.upstream_sink_destinations:
                 break
@@ -420,9 +418,25 @@ class Car(pygame.sprite.Sprite):
 
         return self
 
+    def report(self):
+        x,y = self.position
+        return dict(
+                id=id(self) % 1000,
+                upstream=self.lane.upstream,
+                lane=self.lane.path_index,
+                x=x,
+                y=y,
+                s=self.s,
+                s_path=self.s_path,
+                speed=self.speed,
+                acc=self.acceleration,
+                target_speed=self.target_speed,
+                headway=self.lane_distance_to(self.fwd)
+        )
+
     def __str__(self):
         x, y = self.position
-        o, d, i = self.lane.lane_index
+        o, d, i = self.lane.index
         return ", ".join([
             f'[{i}] Car #{id(self) % 1000}: at [{round(x, 1)}, {round(y, 1)}], s: {round(self.s)}',
             f'v: {round(self.speed, 1)}, v0: {round(self.target_speed, 1)}, a: {round(self.acceleration, 1)}',
