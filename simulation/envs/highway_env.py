@@ -10,10 +10,16 @@ from gym.envs.registration import register
 from gym.utils import seeding
 from simulation.graphics import EnvViewer
 from simulation.road_factory import create_road
+from simulation.car import Car
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 METRIC_DIR = Path('../..') / 'metrics'
+
+base = Path('../..')
+# FLOW_FILE_PATH = base / 'resources' / 'flows.csv'
+FLOW_FILE_PATH = '/Users/rossgreen/PycharmProjects/simulation/resources/flows.csv'
 
 
 class HighwayEnv(gym.Env):
@@ -26,17 +32,25 @@ class HighwayEnv(gym.Env):
     def __init__(self, **params):
         self.params = params
 
+        self.demand_per_step = []
+        self.init_demand()
+
+        self.offscreen = params.get('offscreen_rendering', False)
         self.save_history: bool = params.get('save_history', False)
 
-        self.simulation_frequency = params.get('simulation_frequency', 20)
+        #self.steps_per_episode = params.get('steps_per_episode', 84)
+
+
+        self.simulation_frequency = params.get('simulation_frequency', 15)
         self.policy_frequency = params.get('policy_frequency', 1)
-        self.steps_per_episode = params.get('steps_per_episode', 100)
 
-        self.time_per_update = 1 / self.simulation_frequency
+        self.steps_per_episode = len(self.demand_per_step)  - 1
+
         self.updates_per_step = int(self.simulation_frequency / self.policy_frequency)
-        self.time_per_step = self.updates_per_step * self.time_per_update
 
-        self.demand_conversion = 3600 * self.simulation_frequency
+        self.dt = 1 / self.simulation_frequency
+
+        self.demand_conversion = 900 * self.simulation_frequency
 
         # Seeding
         self.seed = params.get('seed', 42)
@@ -53,6 +67,7 @@ class HighwayEnv(gym.Env):
         self.current_step = 0
         self.updates = 0
         self.simulation_time = 0
+        self.real_time = 0
 
         # Experiment
         self.road = None
@@ -83,23 +98,45 @@ class HighwayEnv(gym.Env):
         self.current_step = 0
         self.updates = 0
         self.simulation_time = 0
+        self.real_time = 0
+
         self.road = create_road()
+
         self.init_demand()
+        # self.create_vehicles()
+
         obs = self.observe(0)
 
         return obs
 
+    def create_vehicles(self):
+        initial_demand_up, initial_demand_down = self.demand_per_step[0]
+        print(initial_demand_up, initial_demand_down)
+        self._create_vehicles(True, initial_demand_up)
+        self._create_vehicles(False, initial_demand_down)
+
+    def _create_vehicles(self, upstream, demand, sms=95, scale=10):
+        density = demand / sms
+        lane_density = int(density / 4)
+
+        for i in ([1, 2, 3, 4]):
+            if upstream:
+                li = ('west', 'east', i) if i > 1 else ('west', 'upstream_onramp0_merge_start', i)
+            else:
+                li = ('east', 'west', i) if i > 1 else ('east', 'downstream_onramp0_merge_start', i)
+            lane = self.road.network.get_lane(li)
+            adds = np.random.normal(lane_density, scale, int(lane_density))
+            s_list = np.cumsum(adds)
+            for s in s_list:
+                Car.make_on_lane(self.road, lane, longitudinal=s)
+
     def step(self, action: int = None):
         self.current_step += 1
-
-        # Car inflow Based on demand and poisson probability
-        self.upstream_demand_for_step = self.upstream_demand[self.current_step]
-        self.downstream_demand_for_step = self.downstream_demand[self.current_step]
 
         self.act(action)
         self.simulate()
 
-        obs = self.observe_cars(action)
+        obs = self.observe(action)
         reward = self.get_reward(action)
         done = self.is_done()
         info = {'action': action}
@@ -109,22 +146,23 @@ class HighwayEnv(gym.Env):
 
         return obs, reward, done, info
 
-    def inflow(self):
-        n_up = np.random.poisson(self.upstream_demand_for_step / self.demand_conversion)
-        self.road.spawn(n_up, True)
-
-        n_down = np.random.poisson(self.downstream_demand_for_step / self.demand_conversion)
-        self.road.spawn(n_down, False)
-
     def simulate(self) -> None:
         """
             Perform several steps of simulation with constant action
         """
+        self.upstream_demand_for_step, self.downstream_demand_for_step = self.demand_per_step[self.current_step]
+        n_up = np.random.poisson(self.upstream_demand_for_step / self.demand_conversion, self.updates_per_step)
+        n_down = np.random.poisson(self.downstream_demand_for_step / self.demand_conversion, self.updates_per_step)
+
         for i in range(self.updates_per_step):
             self.updates += 1
-            self.simulation_time += self.time_per_update
-            self.road.step(dt=self.time_per_update)
-            self.inflow()
+            self.simulation_time += self.dt
+
+            self.road.step(dt=self.dt)
+
+            self.road.spawn(n_up[i], True)
+            self.road.spawn(n_down[i], False)
+
             self.render_update()
 
             # if self.terminal():
@@ -143,7 +181,8 @@ class HighwayEnv(gym.Env):
         if self.should_update_rendering:
             self.viewer.display()
 
-        self.viewer.handle_events()
+        if not self.offscreen:
+            self.viewer.handle_events()
 
         if mode == 'rgb_array':
             image = self.viewer.get_image()
@@ -167,6 +206,10 @@ class HighwayEnv(gym.Env):
             self.viewer = None
 
     def init_demand(self):
+        df = pd.read_csv(FLOW_FILE_PATH, parse_dates=['Quarter Hour'], index_col='Quarter Hour')
+        self.demand_per_step = df.values
+
+    def init_demand2(self):
         demand_periods = self.params.get('demand_periods', 2 * np.pi)
         demand_steps = np.linspace(0, demand_periods, self.steps_per_episode + 1)
         total_demand = self.params.get('total_demand', 20000)
@@ -200,7 +243,7 @@ class HighwayEnv(gym.Env):
         return 0
 
     def terminal(self):
-        return False
+        return self.is_done()
 
     def get_history(self, as_dataframe=False) -> pd.DataFrame:
         history = self.history_log
@@ -211,14 +254,18 @@ class HighwayEnv(gym.Env):
     def is_done(self):
         return self.done or self.current_step >= self.steps_per_episode
 
-    def observe(self, action) -> Dict:
+    def report(self):
         return {
-            'current_step':       self.current_step,
-            'upstream_lanes':     self.road.upstream_lane_count,
-            'downstream_n_lanes': self.road.downstream_lane_count,
-            'upstream_demand':    self.upstream_demand_for_step,
-            'downstream_demand':  self.downstream_demand_for_step,
-            **self.road.detectors.report(self.time_per_step)
+            'step':              self.current_step,
+            'upstream demand':   self.upstream_demand_for_step,
+            'downstream demand': self.downstream_demand_for_step,
+        }
+
+    def observe(self, action):
+        return {
+            **self.report(),
+            **self.road.report(),
+            **self.road.detectors.report(900 / self.policy_frequency)
         }
 
     def observe_cars(self, action) -> List:

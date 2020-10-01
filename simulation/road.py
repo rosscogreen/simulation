@@ -1,6 +1,10 @@
 import logging
 from functools import lru_cache
 from typing import Optional
+import numpy as np
+
+from scipy.stats import hmean
+from numpy import mean
 
 from gym.utils import seeding
 
@@ -58,9 +62,18 @@ class Road(object):
             self.detectors.update(car)
 
     def initiate_lane_reversal(self, upstream: bool):
-        self.is_lane_reversal_in_progress = True
-        n = self.total_lane_count
         i = self.upstream_lane_count
+
+        if upstream and i == 7:
+            return
+
+        if not upstream and i == 1:
+            return
+
+        self.is_lane_reversal_in_progress = True
+
+        n = self.total_lane_count
+
         get_lane = self.network.get_lane
 
         if upstream:
@@ -89,7 +102,7 @@ class Road(object):
         else:
             # new_forbidden is upstream
             o, d, i = self.new_forbidden_lane.index
-            self.new_forbidden_lane.left_line = CL
+            self.new_forbidden_lane.line_types[0] = CL
             self.network.get_lane((o, d, i + 1)).line_types[0] = SL
 
         self.redraw = True
@@ -111,9 +124,14 @@ class Road(object):
     def spawn(self, n: int, upstream: bool):
         lanes = self.network.upstream_source_lanes if upstream else self.network.downstream_source_lanes
         active_lanes = self.get_active_lanes(lanes)
-        for _ in range(n):
-            lane = self.np_random.choice(active_lanes)
-            self.spawn_car_on_lane(lane)
+
+
+        for i in range(n):
+            self.np_random.shuffle(active_lanes)
+            for lane in active_lanes:
+                if self.spawn_car_on_lane(lane):
+                    break
+
 
     def spawn_car_on_lane(self, lane: "AbstractLane", destination=None) -> bool:
         fwd = self.first_car_on_lane(lane, merging=True)
@@ -206,3 +224,65 @@ class Road(object):
                 fwd = c
 
         return fwd
+
+    def report(self):
+        upstream_highway_cars = []
+        upstream_onramp_cars = []
+        upstream_offramp_cars = []
+        downstream_highway_cars = []
+        downstream_onramp_cars = []
+        downstream_offramp_cars = []
+
+        for car in self.cars:
+            lane = car.lane
+            o, d, i = lane.index
+            if lane.upstream:
+                if lane.is_onramp:
+                    upstream_onramp_cars.append(car)
+                elif lane.is_offramp:
+                    upstream_offramp_cars.append(car)
+                elif i != 0:
+                    upstream_highway_cars.append(car)
+            else:
+                if lane.is_onramp:
+                    downstream_onramp_cars.append(car)
+                elif lane.is_offramp:
+                    downstream_offramp_cars.append(car)
+                elif i != 0:
+                    downstream_highway_cars.append(car)
+
+        return {
+            **self._highway_report(upstream_highway_cars, True),
+            **self._highway_report(downstream_highway_cars, False)
+        }
+
+    def _highway_report(self, cars, upstream):
+        updown = 'upstream' if upstream else 'downstream'
+        speeds = np.array([c.speed for c in cars]) * 3.6
+        target_speeds = np.array([c.target_speed for c in cars]) * 3.6
+
+        # spacings = np.array([c.lane_distance_to(c.fwd) for c in cars if c.fwd is not None])
+        # mean_spacing = mean(spacings)
+
+        lanes = self.upstream_lane_count if upstream else self.downstream_lane_count
+
+        total_length_km = (lanes * 500) / 1000
+        num_cars = len(cars)
+        density = num_cars / total_length_km
+
+        try:
+            sms = hmean(speeds)
+        except:
+            sms = 0
+
+        tms = mean(speeds)
+
+        return {
+            f'{updown} lanes':             lanes,
+            f'{updown} num cars':          num_cars,
+            f'{updown} density':           density,
+            f'{updown} time mean speed':   tms,
+            f'{updown} space mean speed':  sms,
+            f'{updown} mean target speed': mean(target_speeds),
+            # f'{updown} spacing m':              mean_spacing,
+        }

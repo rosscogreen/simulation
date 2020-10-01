@@ -126,9 +126,9 @@ class RoadNetwork(object):
             if not lane.is_next_to_offramp:
                 left_o, left_d = None, None
 
-        # if i == 2:
-        #     left_lane = self.get_lane_at_position(upstream, 1, x_pos)
-        #     left_o, left_d, left_i = left_lane.index
+        if i == 2:
+            left_lane = self.get_lane_at_position(upstream, 1, x_pos)
+            left_o, left_d, left_i = left_lane.index
 
         try:
             lanes.append(self.graph[right_o][right_d][right_i])

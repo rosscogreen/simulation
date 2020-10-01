@@ -162,10 +162,10 @@ def merge_lanes(road, x_start=0, x_end=ROAD_LENGTH, y=Y_ROAD_START, nlanes=NUM_L
         up_2 = StraightLane([x, y], [x + l, y], (n1_up, n2_up, 1), [SL, NL],
                             path_index=upstream_path_index, path_start_pos=upstream_path_start_pos)
 
-        down_1 = StraightLane([x_down, y2], [x_end - x, y2], (n_down, n1_down, 1), [CL, SL],
+        down_1 = StraightLane([x_down, y2], [x_end - x, y2], (n_down, n1_down, 1), [CL, NL],
                               is_source=i == 0, path_index=downstream_path_index, path_start_pos=downstream_path_start_pos)
 
-        down_2 = StraightLane([x_end - x, y2], [x_end - x - l, y2], (n1_down, n2_down, 1), [SL, SL],
+        down_2 = StraightLane([x_end - x, y2], [x_end - x - l, y2], (n1_down, n2_down, 1), [SL, NL],
                               path_index=downstream_path_index, path_start_pos=downstream_path_start_pos)
 
         road.network.add_lanes([up_1, up_2, down_1, down_2])
@@ -178,10 +178,10 @@ def merge_lanes(road, x_start=0, x_end=ROAD_LENGTH, y=Y_ROAD_START, nlanes=NUM_L
     up_1 = StraightLane([x_up, y], [x_end, y], (n_up, EAST_NODE, 1), [CL, NL],
                         is_sink=True, path_index=upstream_path_index, path_start_pos=upstream_path_start_pos)
 
-    down_1 = StraightLane([x_end - MERGEABLE_SECTION_STARTS[-1] - l, y2], [x_start, y2], (n_down, WEST_NODE, 1), [CL, SL],
+    down_1 = StraightLane([x_end - MERGEABLE_SECTION_STARTS[-1] - l, y2], [x_start, y2], (n_down, WEST_NODE, 1), [CL, NL],
                           is_sink=True, path_index=downstream_path_index, path_start_pos=downstream_path_start_pos)
 
-    _up_1 = StraightLane([x_start, y2], [x_end, y2], (WEST_NODE, EAST_NODE, nlanes), forbidden=True)
+    _up_1 = StraightLane([x_start, y2], [x_end, y2], (WEST_NODE, EAST_NODE, nlanes), line_types=[SL,NL], forbidden=True)
     _down_1 = StraightLane([x_end, y], [x_start, y], (EAST_NODE, WEST_NODE, nlanes), forbidden=True)
 
     road.network.add_lanes([up_1, down_1, _up_1, _down_1])

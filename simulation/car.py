@@ -15,18 +15,17 @@ PI_QUARTER = np.pi / 4
 
 LOADED_IMAGE = None
 
-FORCE_CHANGE_DISTANCE = 10.
+FORCE_CHANGE_DISTANCE = 5.
 
 
 class Car(pygame.sprite.Sprite):
-    # IMAGE_PATH = Path('..') / 'img' / 'car.png'
     IMAGE_PATH = "/Users/rossgreen/PycharmProjects/simulation/img/car.png"
 
     LENGTH = CAR_LENGTH
     HALF_LENGTH = LENGTH / 2
     WIDTH = CAR_WIDTH
-    MIN_SPEED = 2.0
-    GAP_THRESHOLD = 0
+    MIN_SPEED = 0.0
+    GAP_THRESHOLD = 1.0
 
     def __init__(
             self,
@@ -157,8 +156,7 @@ class Car(pygame.sprite.Sprite):
         self.s_path, self.r_path = self.lane.path_coordinates(self.position)
 
         self.heading += ((self.speed * np.sin(beta)) / self.HALF_LENGTH) * dt
-        self.speed = max(0.01, self.speed + self.acceleration * dt)
-
+        self.speed = max(self.MIN_SPEED, self.speed + self.acceleration * dt)
 
 
         if self.reached_destination:
@@ -174,8 +172,6 @@ class Car(pygame.sprite.Sprite):
     def clip_speed(self):
         if self.speed > MAX_SPEED:  # Speeding
             self.acceleration = min(self.acceleration, MAX_SPEED - self.speed)
-        elif self.speed < self.MIN_SPEED:  # Going to slow
-            self.acceleration = max(self.acceleration, 1.0 * (self.MIN_SPEED - self.speed))
 
     def on_new_lane_state_update(self) -> None:
         self.lane = self.road.network.get_closest_lane(car=self)
@@ -275,10 +271,10 @@ class Car(pygame.sprite.Sprite):
                 acc = min(acc, acc_yield)
 
         # On on ramp, slow down if car in front
-        if self.lane.onramp_merge_to_lane_index is not None:
+        if self.lane.onramp_merge_to_lane_index is not None and self.s_remaining_on_lane <= 20:
             priority_lane = self.road.network.get_lane(self.lane.onramp_merge_to_lane_index)
             fwd = self.road.get_fwd_car(self, priority_lane)
-            if fwd is not None:  # and fwd.speed > 3:
+            if fwd is not None:
                 acc_yield = IDM.calc_acceleration(self, fwd)
                 acc = min(acc, acc_yield)
 
@@ -381,7 +377,7 @@ class Car(pygame.sprite.Sprite):
         elif self.lane.is_next_to_offramp is not None:
             return -np.random.uniform(0, 0.2)
         elif self.lane.index[2] == 1:
-            return 0.2
+            return 0.3
         else:
             return 0
 
@@ -419,7 +415,7 @@ class Car(pygame.sprite.Sprite):
         return self
 
     def report(self):
-        x,y = self.position
+        x, y = self.position
         return dict(
                 id=id(self) % 1000,
                 upstream=self.lane.upstream,

@@ -5,7 +5,7 @@ from simulation.constants import CAR_LENGTH
 
 
 class IDM(object):
-    s0 = 3.0 + CAR_LENGTH
+    s0 = 2.0 + CAR_LENGTH
     """ Minimum distance [m] """
 
     T = 1.0
@@ -14,10 +14,12 @@ class IDM(object):
     a = 2.0
     """ Max acceleration [m/s^2] """
 
-    b = 3.0
+    b = 4.0
     """ Comfortable Deceleration [m/s^2] """
 
     b_max = 8.0
+
+    b_emergency = 18.0
 
     DELTA = 4.0
     """ Acceleration exponent """
@@ -59,8 +61,10 @@ class IDM(object):
 
         if fwd:
             s = bwd.lane_distance_to(fwd)
-            if s < 0.001:
+            if s < CAR_LENGTH + 1:
                 return -cls.b_max
+            if s < CAR_LENGTH + 0.1:
+                return -cls.b_emergency
             s = utils.not_zero(s)
             s_star = cls.d_star(bwd, fwd)
             interactive_term = s_star ** 2 / utils.not_zero(s) ** 2

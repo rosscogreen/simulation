@@ -81,7 +81,7 @@ class WorldSurface(Surface):
 class Cars(pygame.sprite.RenderUpdates):
     IMAGE = None
 
-    def draw(self, surface: WorldSurface):
+    def draw(self, surface: WorldSurface, offscreen):
         dirty = self.lostsprites
         self.lostsprites = []
 
@@ -93,7 +93,7 @@ class Cars(pygame.sprite.RenderUpdates):
         for sprite in self.sprites():
 
             if sprite.image is None:
-                self.load_image(sprite, surface)
+                self.load_image(sprite, surface, offscreen)
 
             sprite_rect = self.spritedict[sprite]
 
@@ -120,35 +120,77 @@ class Cars(pygame.sprite.RenderUpdates):
 
         return dirty
 
-    def load_image(self, sprite: "Car", surface: "WorldSurface"):
-        width = surface.pix(sprite.LENGTH)
-        height = surface.pix(sprite.WIDTH)
+    def load_image(self, sprite: "Car", surface: "WorldSurface", offscreen=False):
+        image_path = getattr(sprite, 'IMAGE_PATH', None)
 
-        path = getattr(sprite, 'IMAGE_PATH', None)
-        if path is None:
-            vehicle_surface = pygame.Surface((sprite.WIDTH, sprite.WIDTH), pygame.SRCALPHA)
-            vehicle_surface.fill(YELLOW)
-        else:
+        if image_path is not None:
+            width = surface.pix(sprite.LENGTH)
+            height = surface.pix(sprite.WIDTH)
+
             if self.IMAGE is None:
-                self.IMAGE = pygame.image.load(str(path)).convert()
-            vehicle_surface = pygame.Surface((width, width), pygame.SRCALPHA)
+                if not offscreen:
+                    self.IMAGE = pygame.image.load(str(image_path)).convert()
+                else:
+                    self.IMAGE = pygame.image.load(str(image_path))
 
+            vehicle_surface = pygame.Surface((width, width), pygame.SRCALPHA)
             image = pygame.transform.scale(self.IMAGE, (width, height))
             vehicle_surface.blit(image, (0, (width / 2) - (height / 2)))
 
+        else:
+            width = surface.pix(3)
+            height = surface.pix(2)
+
+            vehicle_surface = pygame.Surface((width, height))
+            vehicle_surface.fill(RED)
+            vehicle_surface.set_alpha(255)
+
         sprite.image = vehicle_surface
         sprite.rect = vehicle_surface.get_rect()
+
+    # def load_rect(self, surface, v):
+    #     tire_length, tire_width = 1, 0.3
+    #     length = v.LENGTH + 2 * tire_length
+    #     vehicle_surface = pygame.Surface((surface.pix(length), surface.pix(length)),
+    #                                      flags=pygame.SRCALPHA)  # per-pixel alpha
+    #     rect = (
+    #     surface.pix(tire_length), surface.pix(length / 2 - v.WIDTH / 2), surface.pix(v.LENGTH), surface.pix(v.WIDTH))
+    #     pygame.draw.rect(vehicle_surface, RED, rect, 0)
+    #     pygame.draw.rect(vehicle_surface, BLACK, rect, 1)
+    #
+    #     tire_positions = [[surface.pix(tire_length), surface.pix(length / 2 - v.WIDTH / 2)],
+    #                       [surface.pix(tire_length), surface.pix(length / 2 + v.WIDTH / 2)],
+    #                       [surface.pix(length - tire_length), surface.pix(length / 2 - v.WIDTH / 2)],
+    #                       [surface.pix(length - tire_length), surface.pix(length / 2 + v.WIDTH / 2)]]
+    #     tire_angles = [0, 0, v.action["steering"], v.action["steering"]]
+    #     for tire_position, tire_angle in zip(tire_positions, tire_angles):
+    #         tire_surface = pygame.Surface((surface.pix(tire_length), surface.pix(tire_length)), pygame.SRCALPHA)
+    #         rect = (0, surface.pix(tire_length / 2 - tire_width / 2), surface.pix(tire_length), surface.pix(tire_width))
+    #         pygame.draw.rect(tire_surface, cls.BLACK, rect, 0)
+    #         cls.blit_rotate(vehicle_surface, tire_surface, tire_position, np.rad2deg(-tire_angle))
+    #
+    #     # Centered rotation
+    #     h = v.heading if abs(v.heading) > 2 * np.pi / 180 else 0
+    #     position = [*surface.pos2pix(v.position[0], v.position[1])]
+    #     if not offscreen:
+    #         # convert_alpha throws errors in offscreen mode
+    #         # see https://stackoverflow.com/a/19057853
+    #         vehicle_surface = pygame.Surface.convert_alpha(vehicle_surface)
+    #     cls.blit_rotate(surface, vehicle_surface, position, np.rad2deg(-h))
 
 
 class EnvViewer(object):
 
     def __init__(self, env):
         self.env = env
+        self.offscreen = env.offscreen
+
         pygame.init()
         pygame.display.set_caption("Dynamic Lane Reversal Simulation")
 
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        self.screen.fill(GREEN)
+        if not self.offscreen:
+            self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+            self.screen.fill(GREEN)
 
         # Draw road and cars
         self.road_surface = WorldSurface((SCREEN_WIDTH, ROAD_HEIGHT), SCALING)
@@ -156,11 +198,14 @@ class EnvViewer(object):
 
         self.clock = pygame.time.Clock()
 
+
     def display(self):
         self.draw_road()
         self.draw_cars()
-        self.update_screen()
-        self.clock.tick(self.env.simulation_frequency)
+
+        if not self.offscreen:
+            self.update_screen()
+            self.clock.tick(self.env.simulation_frequency)
 
     def draw_road(self):
         if self.env.road.redraw:
@@ -173,7 +218,7 @@ class EnvViewer(object):
         self.road_surface.blit(self.lane_surface, (0, 0))
 
     def draw_cars(self):
-        self.env.road.cars.draw(self.road_surface)
+        self.env.road.cars.draw(self.road_surface, self.offscreen)
 
     def draw_detectors(self):
         surface = self.lane_surface

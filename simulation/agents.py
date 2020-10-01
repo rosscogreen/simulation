@@ -36,7 +36,24 @@ class HeuristicAgent(Agent):
         super(HeuristicAgent, self).__init__(env)
 
     def act(self, obs) -> int:
-        return 0
+        diff = obs.get('upstream space mean speed', 0) - obs.get('downstream space mean speed',0)
+        margin = 5
+        if diff > margin:
+            return 2
+        elif diff < -margin:
+            return 1
+        else:
+            return 0
+
+    def act2(self, obs) -> int:
+        diff = obs['upstream avg flow'] - obs['downstream avg flow']
+        if diff > 100:
+            return 1
+        elif diff < -100:
+            return 2
+        else:
+            return 0
+
 
 
 class ReinforcementLearningAgent(Agent):

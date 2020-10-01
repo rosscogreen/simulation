@@ -1,3 +1,5 @@
+import numpy as np
+
 class Detector(object):
 
     def __init__(self):
@@ -11,23 +13,21 @@ class Detector(object):
             self.speed_sum += car.speed
             self.checked.add(id(car))
 
+    def reset(self):
+        self.speed_sum = 0
+        self.car_count = 0
+        self.checked.clear()
+
     def report(self, period):
-        flow = self.car_count * (3600 / period) if period else 0
+        flow = self.car_count * period if period else 0
         speed = (self.speed_sum / self.car_count) * 3.6 if self.car_count else 0
         obs = {
-            'v':     self.speed_sum,
-            'n':     self.car_count,
             'flow':  flow,
             'speed': speed
         }
 
-        self.speed_sum = 0
-        self.car_count = 0
-
-        self.checked.clear()
-
+        self.reset()
         return obs
-
 
 class Detectors(object):
     detection_points = [10, 120, 250, 380, 490]
@@ -36,6 +36,7 @@ class Detectors(object):
         self.upstream_detectors = {x: Detector() for x in self.detection_points}
         self.downstream_detectors = {x: Detector() for x in self.detection_points}
         self.x_ranges = [(x - margin, x + margin, x) for x in self.detection_points]
+        self.n = len(self.detection_points)
 
     def update(self, car):
         s = car.lane.path_coordinates(car.position)[0]
@@ -54,8 +55,13 @@ class Detectors(object):
         }
 
     def _report(self, period, detectors, prefix):
-        result = {}
-        for x, detector in detectors.items():
-            for k, v in detector.report(period).items():
-                result[f'{prefix}_{x}_{k}'] = v
-        return result
+        detections = [d.report(period) for d in detectors.values()]
+
+        flows = [d['flow'] for d in detections]
+        speeds = [d['speed'] for d in detections]
+
+        return {
+            f'{prefix} avg flow': np.mean(flows),
+            f'{prefix} avg speed': np.mean(speeds),
+        }
+
