@@ -9,6 +9,7 @@ from simulation.car import Car
 from simulation.custom_types import Route, Path, LaneIndex
 from simulation.lanes import AbstractLane
 from simulation.config import WEST_NODE, EAST_NODE
+import random
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class RoadNetwork(object):
         self.downstream_lane_list = []
 
     def add_lane(self, lane: "AbstractLane"):
-        o,d,i = lane.index
+        o, d, i = lane.index
         self.graph[o][d][i] = lane
 
         if lane.upstream:
@@ -206,7 +207,7 @@ class RoadNetwork(object):
 
     @lru_cache()
     def get_path_from_lane_to_destination(self, lane, destination):
-        o,d,i = lane.index
+        o, d, i = lane.index
         path = [lane.index]
 
         if d == destination:
@@ -246,6 +247,34 @@ class RoadNetwork(object):
         return position, heading
 
     def get_next_lane(self, lane, route=None, position=None):
+        if lane.is_sink:
+            return lane
+
+        if lane.next_lane_index_options:
+            if len(lane.next_lane_index_options) == 1:
+                next_lane_index = lane.next_lane_index_options[0]
+            else:
+                next_lane_index = random.choice(lane.next_lane_index_options)
+
+            next_lane = self.get_lane(next_lane_index)
+
+            if next_lane is None:
+                print(f'next lane not found: {lane.index}, {next_lane_index}\n')
+
+            return next_lane
+
+        else:
+            o, d, i = lane.index
+            options = self.graph[d]
+            for option in options:
+                try:
+                    return self.graph[d][option][i]
+                except:
+                    continue
+
+        return lane
+
+    def get_next_lane2(self, lane, route=None, position=None):
         if lane.is_sink:
             return lane
 

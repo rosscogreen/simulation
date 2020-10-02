@@ -6,7 +6,7 @@ import numpy as np
 
 from simulation.config import LANE_WIDTH, HIGHWAY_SPEED_LIMIT
 from simulation.constants import CAR_LENGTH
-from simulation.custom_types import Vector, LineType, LaneIndex
+from simulation.custom_types import Vector, LineType, LaneIndex, NL, UL, CL, SL
 
 onramp_pattern = re.compile(r'^(up|down)stream_onramp[\d]_merge_(start|end)$')
 offramp_pattern = re.compile(r'^(up|down)stream_offramp[\d]_(merge|converge)_(start|end)$')
@@ -15,10 +15,6 @@ offramp_pattern = re.compile(r'^(up|down)stream_offramp[\d]_(merge|converge)_(st
 class AbstractLane(ABC):
     """A lane on the road, described by its central curve."""
 
-    CL = LineType.CONTINUOUS_LINE
-    SL = LineType.STRIPED
-    UL = LineType.CONTINUOUS
-    NL = LineType.NONE
 
     # Defaults
     start_pos = np.array([0, 0])
@@ -41,6 +37,7 @@ class AbstractLane(ABC):
 
     path_index: LaneIndex = index
     path_start_pos = start_pos
+    path_end_pos = end_pos
 
     is_onramp: bool = False
     is_offramp: bool = False
@@ -49,6 +46,8 @@ class AbstractLane(ABC):
     onramp_merge_to_lane_index: "LaneIndex" = None
     offramp_lane_index: "LaneIndex" = None
     priority_lane_index: "LaneIndex" = None
+
+    next_lane_index_options = []
 
     @abstractmethod
     def position(self, longitudinal: float, lateral: float) -> np.ndarray:
@@ -90,10 +89,13 @@ class AbstractLane(ABC):
         raise NotImplementedError()
 
     def same_lane(self, other: "AbstractLane"):
+        return self.path_index == other.path_index
+
+    def same_lane2(self, other: "AbstractLane"):
         return self.index == other.index
 
     def same_road(self, other: "AbstractLane"):
-        return self.index[:2] == other.index[:2]
+        return self.path_index[:2] == other.path_index[:2]
 
     def leading_to_lane(self, other: "AbstractLane"):
         return self.index[1] == other.index[0] and self.index[2] == other.index[2]
@@ -134,6 +136,10 @@ class AbstractLane(ABC):
         """ Return longitudinal distance to position """
         return self.local_coordinates(position)[0]
 
+    def s_path(self, position: Vector) -> float:
+        """ Return longitudinal distance to position """
+        return self.path_coordinates(position)[0]
+
     def r(self, position: Vector) -> float:
         """ Return longitudinal distance to position """
         return self.local_coordinates(position)[1]
@@ -153,7 +159,7 @@ class AbstractLane(ABC):
         dir = 'U' if self.upstream else 'D'
         x1, y1 = self.start_pos.astype(int)
         x2, y2 = self.end_pos.astype(int)
-        return f'{self.index} ({dir})\nstart=[{x1}, {y1}] end=[{x2}, {y2}]'
+        return f'{self.index} ({dir}) start=[{x1}, {y1}] end=[{x2}, {y2}], path={self.path_index}'
 
 
 class StraightLane(AbstractLane):
@@ -169,7 +175,9 @@ class StraightLane(AbstractLane):
                  is_source: bool = False,
                  is_sink: bool = False,
                  path_index: LaneIndex = None,
-                 path_start_pos = None
+                 path_start_pos=None,
+                 path_end_pos=None,
+                 next_lane_index_options=None
                  ) -> None:
 
         self.start_pos = np.array(start_pos)
@@ -178,6 +186,8 @@ class StraightLane(AbstractLane):
 
         self.path_index = path_index or index
         self.path_start_pos = path_start_pos or start_pos
+        self.path_end_pos = path_end_pos or end_pos
+        self.next_lane_index_options = next_lane_index_options or []
 
         self.speed_limit = speed_limit
         self.is_source = is_source
@@ -256,7 +266,12 @@ class SineLane(StraightLane):
                  forbidden: bool = False,
                  speed_limit: float = 20,
                  is_source: bool = False,
-                 is_sink: bool = False) -> None:
+                 is_sink: bool = False,
+                 path_index: LaneIndex = None,
+                 path_start_pos=None,
+                 path_end_pos=None,
+                 next_lane_index_options=None
+                 ) -> None:
         """
         New sinusoidal lane.
 
@@ -273,7 +288,12 @@ class SineLane(StraightLane):
                          speed_limit=speed_limit,
                          is_source=is_source,
                          is_sink=is_sink,
-                         line_types=line_types)
+                         line_types=line_types,
+                         path_index=path_index,
+                         path_start_pos=path_start_pos,
+                         path_end_pos=path_end_pos,
+                         next_lane_index_options=next_lane_index_options
+                         )
         self.amplitude = amplitude
         self.pulsation = pulsation
         self.phase = phase

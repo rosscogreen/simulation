@@ -4,8 +4,8 @@ from typing import Union, Tuple
 import numpy as np
 import pygame
 from numpy import deg2rad, rad2deg
-from pygame.locals import *
 from pygame import Surface
+from pygame.locals import *
 
 from simulation.car import Car
 from simulation.config import DISPLAY_METRICS, LANE_WIDTH, NUM_LANES
@@ -17,14 +17,12 @@ TOP_LEFT = (0, 0)
 
 os.environ['SDL_VIDEO_WINDOW_POS'] = "0,0"
 
-SCREEN_WIDTH = 1680
-SCREEN_HEIGHT = 1050
-SCALING = 3.36
 
-ROAD_HEIGHT = (8 + NUM_LANES) * LANE_WIDTH * SCALING
-METRIC_HEIGHT = int((SCREEN_HEIGHT / 2) - (ROAD_HEIGHT / 2))
 
-ROAD_POS = (0, (2.5 / 8) * SCREEN_HEIGHT)
+#ROAD_HEIGHT = (8 + NUM_LANES) * LANE_WIDTH * SCALING
+#METRIC_HEIGHT = int((SCREEN_HEIGHT / 2) - (ROAD_HEIGHT / 2))
+
+#ROAD_POS = (0, (2.5 / 8) * SCREEN_HEIGHT)
 
 ############## Pygame Colors ######################
 BLACK = (0, 0, 0)
@@ -180,6 +178,13 @@ class Cars(pygame.sprite.RenderUpdates):
 
 
 class EnvViewer(object):
+    SCALING = 3.36
+    METRIC_HEIGHT = 100
+    ROAD_HEIGHT = (8 + NUM_LANES) * LANE_WIDTH * SCALING
+    SCREEN_WIDTH = 1680
+    SCREEN_HEIGHT = int(ROAD_HEIGHT + (3*METRIC_HEIGHT))
+
+
 
     def __init__(self, env):
         self.env = env
@@ -189,15 +194,21 @@ class EnvViewer(object):
         pygame.display.set_caption("Dynamic Lane Reversal Simulation")
 
         if not self.offscreen:
-            self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-            self.screen.fill(GREEN)
+            self.screen = pygame.display.set_mode((self.SCREEN_WIDTH, self.SCREEN_HEIGHT))
+            self.screen.fill(WHITE)
 
         # Draw road and cars
-        self.road_surface = WorldSurface((SCREEN_WIDTH, ROAD_HEIGHT), SCALING)
-        self.lane_surface = WorldSurface((SCREEN_WIDTH, ROAD_HEIGHT), SCALING)
+        self.road_surface = WorldSurface((self.SCREEN_WIDTH, self.ROAD_HEIGHT), self.SCALING)
+        self.lane_surface = WorldSurface((self.SCREEN_WIDTH, self.ROAD_HEIGHT), self.SCALING)
+
+        self.font = None
+        if DISPLAY_METRICS:
+            self.upstream_metric_display = WorldSurface((self.SCREEN_WIDTH, self.METRIC_HEIGHT), self.SCALING)
+            self.downstream_metric_display = WorldSurface((self.SCREEN_WIDTH, self.METRIC_HEIGHT), self.SCALING)
+            self.metrics_display = WorldSurface((self.SCREEN_WIDTH, self.METRIC_HEIGHT), self.SCALING)
+            self.font = pygame.font.SysFont('timesnewroman', 20)
 
         self.clock = pygame.time.Clock()
-
 
     def display(self):
         self.draw_road()
@@ -231,8 +242,44 @@ class EnvViewer(object):
                                    start_pos=np.array([x, y1]),
                                    end_pos=np.array([x, y2]))
 
+    def update_metric_displays(self):
+        if not DISPLAY_METRICS:
+            return
+
+        self.upstream_metric_display.fill(WHITE)
+        self.downstream_metric_display.fill(WHITE)
+        self.metrics_display.fill(WHITE)
+
+        for x, detector in self.env.road.detectors.upstream_detectors.items():
+            if x == 490:
+                x=x-25
+            self.draw_detector_metrics(detector, self.upstream_metric_display, x)
+
+        for x, detector in self.env.road.detectors.downstream_detectors.items():
+            if x == 490:
+                x=x-25
+            self.draw_detector_metrics(detector, self.downstream_metric_display, x)
+
+
+        self.metrics_display.blit(self.font.render(f'step: {self.env.current_step}', True, BLACK), (20,20))
+        self.metrics_display.blit(self.font.render(f'upstream demand: {self.env.upstream_demand_for_step*4} veh/hr', True, BLACK), (20,40))
+        self.metrics_display.blit(self.font.render(f'downstream demand: {self.env.downstream_demand_for_step*4} veh/hr', True, BLACK), (20,60))
+
+        self.screen.blit(self.upstream_metric_display, (0, 0))
+        self.screen.blit(self.downstream_metric_display, (0, self.ROAD_HEIGHT + self.METRIC_HEIGHT))
+        self.screen.blit(self.metrics_display, (0, self.ROAD_HEIGHT + (2*self.METRIC_HEIGHT)))
+
+    def draw_detector_metrics(self, detector, surface, x):
+        obs = detector.obs
+
+        metrics = [f"flow: {round(obs['flow'], 1)} veh/hr", f"speed: {round(obs['speed'], 1)} km/h"]
+        for i, metric in enumerate(metrics):
+            img = self.font.render(metric, True, BLACK)
+            pos = surface.vec2pix((x, (i*5) + 10))
+            surface.blit(img, pos)
+
     def update_screen(self):
-        self.screen.blit(self.road_surface, ROAD_POS)
+        self.screen.blit(self.road_surface, (0, self.METRIC_HEIGHT))
         pygame.display.flip()
 
     def draw_lane(self, lane: "AbstractLane"):
@@ -268,11 +315,7 @@ class EnvViewer(object):
             self.draw_line(surface, (x1, y1), (x1, y2), color=color, width=width)
 
     def draw_line(self, surface, start_pos, end_pos, width=1, color=WHITE):
-        pygame.draw.line(surface=surface,
-                         color=color,
-                         start_pos=surface.vec2pix(start_pos),
-                         end_pos=surface.vec2pix(end_pos),
-                         width=width)
+        pygame.draw.line(surface, color, surface.vec2pix(start_pos), surface.vec2pix(end_pos), width)
 
     def close(self):
         pygame.quit()
@@ -294,201 +337,4 @@ class EnvViewer(object):
 
     def get_image(self):
         data = pygame.surfarray.array3d(self.road_surface)
-        return np.moveaxis(data, 0, 1)
-
-
-class EnvViewer2(object):
-
-    def __init__(self, env):
-        self.env = env
-
-        TITLE_FONT = pygame.font.Font('freesansbold.ttf', 20)
-        DEFAULT_FONT = pygame.font.Font('freesansbold.ttf', 16)
-
-        # Initialise Screen
-        pygame.init()
-        pygame.display.set_caption("Dynamic Lane Reversal Simulation")
-
-        main_display_size = (SCREEN_WIDTH, SCREEN_HEIGHT)
-
-        # Screen display surface
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        # self.screen.fill(GREEN)
-
-        # Game display surface
-        self.game_display = WorldSurface((SCREEN_WIDTH, SCREEN_HEIGHT), SCALING)
-        self.game_display.fill(color=GREEN)
-
-        # Road display surface
-
-        self.road_display = WorldSurface((SCREEN_WIDTH, ROAD_HEIGHT), SCALING)
-        self.road_graphics = RoadGraphics(road=self.env.road, surface=self.road_display)
-
-        # Metrics Displays
-        # self.metric_display = WorldSurface((SCREEN_WIDTH, METRIC_HEIGHT), SCALING)
-        # self.metric_display.fill(WHITE)
-        # self.init_metrics()
-
-        # Timing
-        self.clock = pygame.time.Clock()
-
-    def init_metrics(self):
-        y_metric_start = SCREEN_HEIGHT * (3 / 8)  # self.ROAD_HEIGHT
-        x_metric_start = 20
-        metric_width = (SCREEN_WIDTH - (2 * x_metric_start)) / 5
-        self.metric_display_pos = (0, y_metric_start)
-        self.metric_display_positions = [(x_metric_start + (i * metric_width), 10) for i in range(5)]
-
-    def display(self):
-        self.draw_road()
-        self.draw_cars()
-        self.update_screen()
-
-    def display2(self):
-        """
-            Main method:
-            Display the road_network and vehicles on a pygame window.
-        """
-
-        # update road lanes if any changes made to lanes
-        # self.road_graphics.draw(surface=self.road_display_surface)
-        self.road_graphics.draw()
-
-        # Display lanes on game display
-        self.game_display_surface.blit(source=self.road_display_surface, dest=TOP_LEFT)
-
-        # Update vehicle positions and display
-        dirty = self.env.road.cars.draw(self.game_display_surface)
-
-        if DISPLAY_METRICS:
-            self._update_metric_display()
-            self.game_display_surface.blit(source=self.metric_display_surface, dest=self.metric_display_pos)
-
-        # Update game display on screen
-        self.main_display_surface.blit(source=self.game_display_surface, dest=(0, (2.5 / 8) * SCREEN_HEIGHT))
-
-        # Display screen changes
-        pygame.display.flip()
-        # pygame.display.update(dirty)
-
-        # Update game clock
-        self.clock.tick(self.env.experiment.SIMULATION_FREQUENCY)
-
-    def draw_road(self):
-        self.road_graphics.draw()
-        self.game_display.blit(self.road_display, (0, 0))
-
-    def draw_cars(self):
-        dirty = self.env.road.cars.draw(self.game_display)
-
-    def update_screen(self, dirty=None):
-        self.screen.blit(self.game_display, (0, 0))
-        if dirty is not None:
-            pygame.display.update(dirty)
-        else:
-            pygame.display.flip()
-
-    def draw_metrics(self):
-        if not DISPLAY_METRICS:
-            return
-
-    def _update_metric_display(self):
-        state = self.env.current_state
-        if state is None:
-            return
-
-        env_metrics = {
-            "Steps": state['steps'],
-            "Time":  state['time'],
-        }
-
-        upstream_metrics = {
-            "Lanes":                    state['upstream_lanes'],
-            "Demand (veh/hr)":          state['upstream_demand'],
-            "Queue In":                 state['upstream_queue'],
-            "Density (veh/km)":         state['upstream_density'],
-            "Space Mean Speed (km/hr)": state['upstream_velocity'],
-            "Flow":                     state['upstream_flow'],
-        }
-
-        downstream_metrics = {
-            "Lanes":                    state['downstream_lanes'],
-            "Demand (veh/hr)":          state['downstream_demand'],
-            "Queue In":                 state['downstream_queue'],
-            "Density (veh/km)":         state['downstream_density'],
-            "Space Mean Speed (km/hr)": state['downstream_velocity'],
-            "Flow":                     state['downstream_flow'],
-        }
-
-        global_metrics = {
-            "Total Flow": state['upstream_flow'] + state['downstream_flow'],
-        }
-
-        self.me.fill(WHITE)
-
-        p1, p2, p3, p4, p5 = self.metric_display_positions
-
-        # Simulation Metrics
-        self._display_metrics(metrics=env_metrics, pos=p1, title="Simulation")
-
-        # Upstream Metrics
-        self._display_metrics(metrics=upstream_metrics, pos=p2, title="Upstream Metrics")
-
-        # Downstream Metrics
-        self._display_metrics(metrics=downstream_metrics, pos=p3, title="Downstream Metrics")
-
-        # Global Road Metrics
-        self._display_metrics(metrics=global_metrics, pos=p4, title="Road Metrics")
-
-    def _display_metrics(self, metrics, pos, title=None):
-        if title:
-            pos = self._display_text(text=title, pos=pos, font=self.title_font, y_increase=2)
-
-        for k, v in metrics.items():
-            if isinstance(v, float):
-                v = round(v, 3)
-            metric_txt = f'{k} = {v}'
-            pos = self._display_text(metric_txt, pos)
-
-    def _display_text(self, text: Union[str, pygame.font.FontType], pos, font=None, y_increase=1.5):
-        if isinstance(text, str):
-            font = font or self.default_font
-            text = font.render(text, True, BLACK)
-
-        rect = text.get_rect(topleft=pos)
-
-        self.metric_display_surface.blit(text, rect)
-
-        x, y, w, h = rect
-        y += h * y_increase
-
-        return x, y
-
-    def close(self):
-        """
-            Close the pygame window.
-        """
-        pygame.quit()
-
-    def handle_events(self):
-        """
-            Handle pygame events by forwarding them to the display and environment vehicles.
-        """
-        for event in pygame.event.get():
-            if event.type == QUIT:
-                self.env.close()
-
-            elif event.type == KEYDOWN:
-                if event.key == K_ESCAPE:
-                    self.env.close()
-                elif event.key == K_UP:
-                    self.env._act(1)
-                elif event.key == K_DOWN:
-                    self.env._act(2)
-
-    def get_image(self):
-        """
-        :return: the rendered image as a rbg array
-        """
-        data = pygame.surfarray.array3d(self.game_display_surface)
         return np.moveaxis(data, 0, 1)

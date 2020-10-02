@@ -125,11 +125,12 @@ class Road(object):
         lanes = self.network.upstream_source_lanes if upstream else self.network.downstream_source_lanes
         active_lanes = self.get_active_lanes(lanes)
 
-
+        added = 0
         for i in range(n):
             self.np_random.shuffle(active_lanes)
             for lane in active_lanes:
                 if self.spawn_car_on_lane(lane):
+                    added += 1
                     break
 
 
@@ -139,7 +140,7 @@ class Road(object):
         speed = lane.speed_limit
 
         if fwd:
-            gap = lane.local_coordinates(fwd.position)[0]
+            gap = fwd.s_path
             if gap < MIN_INSERTION_GAP:
                 return False
             speed = IDM.calc_max_initial_speed(gap=gap, fwd_speed=fwd.speed, speed_limit=speed)
@@ -152,51 +153,31 @@ class Road(object):
         return True
 
     def cars_on_lane(self, lane, merging=False):
-        return [c for c in self.cars
-                if self.lanes_connected(lane, c.lane)
-                and (not merging or self.lanes_connected(lane, c.lane))]
+        if merging:
+            return [c for c in self.cars if lane.same_lane(c.lane) or lane.same_lane(c.target_lane)]
+        else:
+            return [c for c in self.cars if lane.same_lane(c.lane)]
 
     def first_car_on_lane(self, lane, merging=False) -> Optional["Car"]:
-        cars = [(c, c.s if lane.same_lane(c.lane) else lane.s(c.position))
-                for c in self.cars
-                if self.lanes_connected(lane, c.lane)
-                and (not merging or self.lanes_connected(lane, c.lane))]
-
-        s_fwd = 500
-        fwd = None
-
-        for c, s in cars:
-            if s <= s_fwd:
-                s_fwd = s
-                fwd = c
-
-        return fwd
-
-    @lru_cache()
-    def lanes_connected(self, lane1, lane2):
-        if lane1.upstream != lane2.upstream:
-            return False
-
-        connected = self.network.is_connected
-
-        l1, l2 = lane1.index, lane2.index
-        return connected(l1, l2, same_lane=True, depth=2) or connected(l2, l1, same_lane=True, depth=2)
+        cars = self.cars_on_lane(lane, merging)
+        if not cars:
+            return None
+        return min(cars, key=lambda c: c.s_path)
 
     def get_neighbours(self, car, lane=None):
         lane = lane or car.lane
-        s_me = lane.s(car.position)
+        #s_me = lane.s(car.position)
+        s_me = lane.path_coordinates(car.position)[0]
 
-        cars = [(c, c.s if lane.same_lane(c.lane) else lane.s(c.position))
-                for c in self.cars
-                if self.lanes_connected(lane, c.lane)
-                and c is not car]
+        cars = self.cars_on_lane(lane)
 
         s_fwd = 500
         s_bwd = 0
         fwd = None
         bwd = None
 
-        for c, s in cars:
+        for c in cars:
+            s = c.s_path
             if s_me < s <= s_fwd:  # Car in front
                 s_fwd = s
                 fwd = c
@@ -208,22 +189,12 @@ class Road(object):
 
     def get_fwd_car(self, car, lane=None):
         lane = lane or car.lane
-        s_me = lane.s(car.position)
+        s_me = lane.path_coordinates(car.position)[0]
+        cars = [c for c in self.cars_on_lane(lane) if c.s_path >= s_me]
+        if not cars:
+            return None
+        return min(cars, key=lambda c: c.s_path)
 
-        cars = [(c, c.s if lane.same_lane(c.lane) else lane.s(c.position))
-                for c in self.cars
-                if self.lanes_connected(lane, c.lane)
-                and c is not car]
-
-        s_fwd = 500
-        fwd = None
-
-        for c, s in cars:
-            if s_me < s <= s_fwd:  # Car in front
-                s_fwd = s
-                fwd = c
-
-        return fwd
 
     def report(self):
         upstream_highway_cars = []

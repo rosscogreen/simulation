@@ -77,6 +77,7 @@ class Mobil(object):
         if new_bwd_new_acc < -cls.B_SAFE:
             return False
 
+
         # Wrong direction
         if me.route and np.sign(lane.index[2] - me.target_lane.index[2]) != np.sign(
                 me.route[0][2] - me.target_lane.index[2]):

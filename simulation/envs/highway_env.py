@@ -21,6 +21,8 @@ base = Path('../..')
 # FLOW_FILE_PATH = base / 'resources' / 'flows.csv'
 FLOW_FILE_PATH = '/Users/rossgreen/PycharmProjects/simulation/resources/flows.csv'
 
+FLOW_MULTIPLIER = 2
+
 
 class HighwayEnv(gym.Env):
     metadata = {'render.modes': ['human', 'rgb_array', 'console']}
@@ -38,13 +40,12 @@ class HighwayEnv(gym.Env):
         self.offscreen = params.get('offscreen_rendering', False)
         self.save_history: bool = params.get('save_history', False)
 
-        #self.steps_per_episode = params.get('steps_per_episode', 84)
-
+        # self.steps_per_episode = params.get('steps_per_episode', 84)
 
         self.simulation_frequency = params.get('simulation_frequency', 15)
         self.policy_frequency = params.get('policy_frequency', 1)
 
-        self.steps_per_episode = len(self.demand_per_step)  - 1
+        self.steps_per_episode = len(self.demand_per_step) - 1
 
         self.updates_per_step = int(self.simulation_frequency / self.policy_frequency)
 
@@ -105,7 +106,8 @@ class HighwayEnv(gym.Env):
         self.init_demand()
         # self.create_vehicles()
 
-        obs = self.observe(0)
+        # obs = self.observe(0)
+        obs = {}
 
         return obs
 
@@ -140,6 +142,9 @@ class HighwayEnv(gym.Env):
         reward = self.get_reward(action)
         done = self.is_done()
         info = {'action': action}
+
+        if self.viewer is not None:
+            self.viewer.update_metric_displays()
 
         if self.save_history:
             self.history_log.append(obs)
@@ -207,7 +212,7 @@ class HighwayEnv(gym.Env):
 
     def init_demand(self):
         df = pd.read_csv(FLOW_FILE_PATH, parse_dates=['Quarter Hour'], index_col='Quarter Hour')
-        self.demand_per_step = df.values
+        self.demand_per_step = df.values * FLOW_MULTIPLIER
 
     def init_demand2(self):
         demand_periods = self.params.get('demand_periods', 2 * np.pi)
@@ -265,7 +270,7 @@ class HighwayEnv(gym.Env):
         return {
             **self.report(),
             **self.road.report(),
-            **self.road.detectors.report(900 / self.policy_frequency)
+            **self.road.detectors.report(3600 / (1/self.policy_frequency))
         }
 
     def observe_cars(self, action) -> List:

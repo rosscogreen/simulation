@@ -1,5 +1,4 @@
-import warnings
-warnings.filterwarnings('ignore')
+import warnings; warnings.filterwarnings('ignore')
 import gym
 from tqdm import trange
 import simulation

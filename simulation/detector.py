@@ -2,10 +2,13 @@ import numpy as np
 
 class Detector(object):
 
-    def __init__(self):
+    def __init__(self, x):
+        self.x = x
         self.car_count = 0
         self.speed_sum = 0
         self.checked = set()
+
+        self.obs = {}
 
     def update(self, car):
         if id(car) not in self.checked:
@@ -25,7 +28,7 @@ class Detector(object):
             'flow':  flow,
             'speed': speed
         }
-
+        self.obs = obs
         self.reset()
         return obs
 
@@ -33,8 +36,8 @@ class Detectors(object):
     detection_points = [10, 120, 250, 380, 490]
 
     def __init__(self, margin=1):
-        self.upstream_detectors = {x: Detector() for x in self.detection_points}
-        self.downstream_detectors = {x: Detector() for x in self.detection_points}
+        self.upstream_detectors = {x: Detector(x) for x in self.detection_points}
+        self.downstream_detectors = {x: Detector(x) for x in self.detection_points}
         self.x_ranges = [(x - margin, x + margin, x) for x in self.detection_points]
         self.n = len(self.detection_points)
 

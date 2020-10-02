@@ -79,14 +79,24 @@ def onramp(road, x, y, idx, upstream):
     r = LANE_WIDTH / 2
     ys = y + upstream * r * np.arange(0, 4)
 
+    path_index = (runway_node, merge_destination_node, 0)
+    path_start_pos = (xs[0], ys[0])
+    path_end_pos = (xs[2], ys[2])
+
     runway = StraightLane([xs[0], ys[0]], [xs[1], ys[0]], (runway_node, converge_node, 0), [CL, CL],
-                          is_source=True, speed_limit=RAMP_SPEED_LIMIT)
+                          is_source=True, speed_limit=RAMP_SPEED_LIMIT,
+                          path_index=path_index, path_start_pos=path_start_pos, path_end_pos=path_end_pos,
+                          next_lane_index_options=[(converge_node, merge_origin_node, 0)])
 
     converge = SineLane([xs[1], ys[1]], [xs[2], ys[1]], (converge_node, merge_origin_node, 0), [UL, UL],
                         amplitude=-r, pulsation=np.pi / CONVERGE_LENGTH, phase=np.pi / 2,
-                        speed_limit=RAMP_SPEED_LIMIT)
+                        speed_limit=RAMP_SPEED_LIMIT,
+                        path_index=path_index, path_start_pos=path_start_pos, path_end_pos=path_end_pos,
+                        next_lane_index_options=[(merge_origin_node, merge_destination_node, 0)])
 
-    merge = StraightLane([xs[2], ys[2]], [xs[3], ys[2]], (merge_origin_node, merge_destination_node, 0), [UL, NL])
+    merge = StraightLane([xs[2], ys[2]], [xs[3], ys[2]], (merge_origin_node, merge_destination_node, 0), [UL, NL],
+                         path_index=path_index, path_start_pos=path_start_pos, path_end_pos=path_end_pos,
+                         next_lane_index_options=[(merge_origin_node, merge_destination_node, 1)])
 
     barrier = SineLane([xs[3], ys[3]], [xs[4], ys[3]], (barrier_origin_node, barrier_destination_node, 0), [UL, NL],
                        amplitude=-r, pulsation=np.pi / BARRIER_LENGTH, phase=np.pi / 2,
@@ -111,18 +121,27 @@ def offramp(road: "Road", x: int, y, upstream: bool, idx: int):
     r = -LANE_WIDTH / 2
     ys = y + upstream * r * np.arange(1, 5)
 
+    path_index = (merge_origin_node, runway_node, 0)
+    path_start_pos = (xs[1], ys[1])
+    path_end_pos = (xs[3], ys[3])
+
     barrier = SineLane([xs[0], ys[0]], [xs[1], ys[0]], (barrier_origin_node, barrier_destination_node, 0), [UL, NL],
                        amplitude=r, pulsation=np.pi / BARRIER_LENGTH, phase=-np.pi / 2,
                        forbidden=True, speed_limit=0)
 
-    merge = StraightLane([xs[1], ys[1]], [xs[2], ys[1]], (merge_origin_node, merge_destination_node, 0), [UL, NL])
+    merge = StraightLane([xs[1], ys[1]], [xs[2], ys[1]], (merge_origin_node, merge_destination_node, 0), [UL, NL],
+                         path_index=path_index, path_start_pos=path_start_pos, path_end_pos=path_end_pos,
+                         next_lane_index_options=[(merge_destination_node, converge_node, 0)])
 
     converge = SineLane([xs[2], ys[2]], [xs[3], ys[2]], (merge_destination_node, converge_node, 0), [UL, UL],
                         amplitude=r, pulsation=np.pi / CONVERGE_LENGTH, phase=-np.pi / 2,
-                        speed_limit=RAMP_SPEED_LIMIT)
+                        speed_limit=RAMP_SPEED_LIMIT,
+                        path_index=path_index, path_start_pos=path_start_pos, path_end_pos=path_end_pos,
+                        next_lane_index_options=[(converge_node, runway_node, 0)])
 
     runway = StraightLane([xs[3], ys[3]], [xs[4], ys[3]], (converge_node, runway_node, 0), [CL, CL],
-                          is_sink=True, speed_limit=RAMP_SPEED_LIMIT)
+                          is_sink=True, speed_limit=RAMP_SPEED_LIMIT,
+                          path_index=path_index, path_start_pos=path_start_pos, path_end_pos=path_end_pos)
 
     road.network.add_lanes([barrier, merge, converge, runway])
 
@@ -136,8 +155,11 @@ def merge_lanes(road, x_start=0, x_end=ROAD_LENGTH, y=Y_ROAD_START, nlanes=NUM_L
 
     upstream_path_index = (WEST_NODE, EAST_NODE, 1)
     upstream_path_start_pos = (x_start, y)
+    upstream_path_end_pos = (x_end, y)
+
     downstream_path_index = (EAST_NODE, WEST_NODE, 1)
     downstream_path_start_pos = (x_end, y2)
+    downstream_path_end_pos = (x_start, y2)
 
     for i, x in enumerate(MERGEABLE_SECTION_STARTS):
 
@@ -155,18 +177,43 @@ def merge_lanes(road, x_start=0, x_end=ROAD_LENGTH, y=Y_ROAD_START, nlanes=NUM_L
         n1_down = f'downstream_{ramp_type}{idx}_merge_start'
         n2_down = f'downstream_{ramp_type}{idx}_merge_end'
 
+        # Continuous Section
         up_1 = StraightLane([x_up, y], [x, y], (n_up, n1_up, 1), [CL, NL],
                             is_source=i == 0,
-                            path_index=upstream_path_index, path_start_pos=upstream_path_start_pos)
+                            path_index=upstream_path_index, path_start_pos=upstream_path_start_pos, path_end_pos=upstream_path_end_pos,
+                            next_lane_index_options=[(n1_up, n2_up, 1)])
 
+        # Striped Section
+        options = [(n2_up, f'upstream_{ramp_type}{idx+1}_merge_start', 1)]
+        if ramp_type == 'offramp':
+            if idx == 0:
+                options = [(n2_up, f'upstream_onramp{idx + 1}_merge_start', 1), (n1_up, n2_up, 0)]
+            else:
+                options = [(n2_up, EAST_NODE, 1), (n1_up, n2_up, 0)]
+        else:
+            options = [(n2_up, f'upstream_offramp{idx}_merge_start', 1)]
         up_2 = StraightLane([x, y], [x + l, y], (n1_up, n2_up, 1), [SL, NL],
-                            path_index=upstream_path_index, path_start_pos=upstream_path_start_pos)
+                            path_index=upstream_path_index, path_start_pos=upstream_path_start_pos, path_end_pos=upstream_path_end_pos,
+                            next_lane_index_options=options)
 
+        # Continuous Section
         down_1 = StraightLane([x_down, y2], [x_end - x, y2], (n_down, n1_down, 1), [CL, NL],
-                              is_source=i == 0, path_index=downstream_path_index, path_start_pos=downstream_path_start_pos)
+                              is_source=i == 0,
+                              path_index=downstream_path_index, path_start_pos=downstream_path_start_pos, path_end_pos=downstream_path_end_pos,
+                              next_lane_index_options=[(n1_down, n2_down, 1)])
+
+        # Striped Section
+        if ramp_type == 'offramp':
+            if idx == 0:
+                options = [(n2_down, f'downstream_onramp{idx + 1}_merge_start', 1), (n1_down, n2_down, 0)]
+            else:
+                options = [(n2_down, WEST_NODE, 1), (n1_down, n2_down, 0)]
+        else:
+            options = [(n2_down, f'downstream_offramp{idx}_merge_start', 1)]
 
         down_2 = StraightLane([x_end - x, y2], [x_end - x - l, y2], (n1_down, n2_down, 1), [SL, NL],
-                              path_index=downstream_path_index, path_start_pos=downstream_path_start_pos)
+                              path_index=downstream_path_index, path_start_pos=downstream_path_start_pos, path_end_pos=downstream_path_end_pos,
+                              next_lane_index_options=options)
 
         road.network.add_lanes([up_1, up_2, down_1, down_2])
 
@@ -176,10 +223,12 @@ def merge_lanes(road, x_start=0, x_end=ROAD_LENGTH, y=Y_ROAD_START, nlanes=NUM_L
         n_down = n2_down
 
     up_1 = StraightLane([x_up, y], [x_end, y], (n_up, EAST_NODE, 1), [CL, NL],
-                        is_sink=True, path_index=upstream_path_index, path_start_pos=upstream_path_start_pos)
+                        is_sink=True,
+                        path_index=upstream_path_index, path_start_pos=upstream_path_start_pos, path_end_pos=upstream_path_end_pos)
 
     down_1 = StraightLane([x_end - MERGEABLE_SECTION_STARTS[-1] - l, y2], [x_start, y2], (n_down, WEST_NODE, 1), [CL, NL],
-                          is_sink=True, path_index=downstream_path_index, path_start_pos=downstream_path_start_pos)
+                          is_sink=True,
+                          path_index=downstream_path_index, path_start_pos=downstream_path_start_pos, path_end_pos=downstream_path_end_pos)
 
     _up_1 = StraightLane([x_start, y2], [x_end, y2], (WEST_NODE, EAST_NODE, nlanes), line_types=[SL,NL], forbidden=True)
     _down_1 = StraightLane([x_end, y], [x_start, y], (EAST_NODE, WEST_NODE, nlanes), forbidden=True)

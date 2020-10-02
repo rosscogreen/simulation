@@ -59,22 +59,48 @@ class IDM(object):
 
         acc = cls.a * (1 - np.power(v0 / v_star, cls.DELTA)) if v0 <= v_star else cls.a * (1 - v0/v_star)
 
+        b = cls.b
+
+        noise = 0
+
         if fwd:
-            s = bwd.lane_distance_to(fwd)
-            if s < CAR_LENGTH + 1:
-                return -cls.b_max
-            if s < CAR_LENGTH + 0.1:
-                return -cls.b_emergency
-            s = utils.not_zero(s)
+            same_lane = bwd.lane.index == fwd.lane.index
+            s_gap = bwd.lane_distance_to(fwd)
+
+            if not same_lane:
+                is_on_left = 1 if fwd.lane.index[2] < bwd.lane.index[2] else -1
+                bias = fwd.right_bias * is_on_left
+
+                if bias >= 1:
+                    b = b/2
+                else:
+                    # if bwd.lane.is_onramp and bwd.s_remaining_on_lane < 15:
+                    #     return -cls.b_max
+                    # elif fwd.lane.is_onramp and fwd.s_remaining_on_lane < 15:
+                    #     return -cls.b_max
+
+                    if bwd.lane.is_onramp and bwd.s_remaining_on_lane < 15:
+                        b = b*2
+                    elif fwd.lane.is_onramp and fwd.s_remaining_on_lane < 15:
+                        b = b*2
+
+                if s_gap < cls.s0:
+                    noise = 0.3
+
+            else:
+                if s_gap < cls.s0:
+                    return -cls.b_max
+
+            s_gap = utils.not_zero(s_gap)
             s_star = cls.d_star(bwd, fwd)
-            interactive_term = s_star ** 2 / utils.not_zero(s) ** 2
+
+            interactive_term = s_star ** 2 / s_gap ** 2
             acc -= cls.a * interactive_term
 
-            noise = 0.3 if s < cls.s0 else 0
             acc_rnd = noise * (np.random.random() - 0.5)
             acc += acc_rnd
 
-        return max(-cls.b, acc)
+        return max(-b, acc)
 
     @classmethod
     def calc_max_initial_speed(cls, gap: float, fwd_speed: float, speed_limit: float = None) -> float:
