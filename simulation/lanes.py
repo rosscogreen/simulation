@@ -6,7 +6,7 @@ import numpy as np
 
 from simulation.config import LANE_WIDTH, HIGHWAY_SPEED_LIMIT
 from simulation.constants import CAR_LENGTH
-from simulation.custom_types import Vector, LineType, LaneIndex, NL, UL, CL, SL
+from simulation.custom_types import Vector, LineType, LaneIndex, NL
 
 onramp_pattern = re.compile(r'^(up|down)stream_onramp[\d]_merge_(start|end)$')
 offramp_pattern = re.compile(r'^(up|down)stream_offramp[\d]_(merge|converge)_(start|end)$')
@@ -14,7 +14,6 @@ offramp_pattern = re.compile(r'^(up|down)stream_offramp[\d]_(merge|converge)_(st
 
 class AbstractLane(ABC):
     """A lane on the road, described by its central curve."""
-
 
     # Defaults
     start_pos = np.array([0, 0])
@@ -38,6 +37,7 @@ class AbstractLane(ABC):
     path_index: LaneIndex = index
     path_start_pos = start_pos
     path_end_pos = end_pos
+    path_length = length
 
     is_onramp: bool = False
     is_offramp: bool = False
@@ -182,19 +182,6 @@ class StraightLane(AbstractLane):
 
         self.start_pos = np.array(start_pos)
         self.end_pos = np.array(end_pos)
-        self.index = index
-
-        self.path_index = path_index or index
-        self.path_start_pos = path_start_pos or start_pos
-        self.path_end_pos = path_end_pos or end_pos
-        self.next_lane_index_options = next_lane_index_options or []
-
-        self.speed_limit = speed_limit
-        self.is_source = is_source
-        self.is_sink = is_sink
-
-        if line_types is not None:
-            self.line_types = line_types
 
         delta = self.end_pos - self.start_pos
         x, y = delta
@@ -203,6 +190,26 @@ class StraightLane(AbstractLane):
         self.length = np.linalg.norm(delta)
         self.direction: np.ndarray = delta / self.length
         self.direction_lateral: np.ndarray = np.flip(self.direction) * [-1, 1]
+
+        self.index = index
+
+        self.path_index = path_index or index
+        self.path_start_pos = np.array(path_start_pos or start_pos)
+
+        if path_end_pos is None:
+            self.path_end_pos = self.end_pos
+        else:
+            self.path_end_pos = np.array(path_end_pos)
+
+        self.next_lane_index_options = next_lane_index_options or []
+        self.path_length = self.s_path(self.path_end_pos)
+
+        self.speed_limit = speed_limit
+        self.is_source = is_source
+        self.is_sink = is_sink
+
+        if line_types is not None:
+            self.line_types = line_types
 
         self.upstream: bool = x >= 0
         self.forbidden = forbidden
@@ -219,16 +226,19 @@ class StraightLane(AbstractLane):
         self.is_onramp = origin_onramp_match is not None and i == 0
         self.onramp_merge_to_lane_index = (o, d, 1) if self.is_onramp else None
 
+        if origin_onramp_match is not None and i == 1:
+            self.priority_lane_index = (o, d, 0)
+
         self.is_offramp = origin_offramp_match is not None and i == 0
         self.is_next_to_offramp = origin_offramp_match is not None and i == 1
         self.offramp_lane_index = (o, d, 0) if self.is_next_to_offramp else None
 
         # Before merge lane or next to merge lane
-        if destination_onramp_match and i == 1:
-            if destination_onramp_match[2] == 'start':
-                self.priority_lane_index = (d, d.replace('start', 'end'), 0)
-            else:
-                self.priority_lane_index = (d.replace('end', 'start'), d, 0)
+        # if destination_onramp_match and i == 1:
+        #     if destination_onramp_match[2] == 'start':
+        #         self.priority_lane_index = (d, d.replace('start', 'end'), 0)
+        #     else:
+        #         self.priority_lane_index = (d.replace('end', 'start'), d, 0)
 
     def position(self, longitudinal: float, lateral: float) -> np.ndarray:
         return self.start_pos + (longitudinal * self.direction) + (lateral * self.direction_lateral)

@@ -23,4 +23,4 @@ KP_LATERAL = 1 / 3 * KP_HEADING  # [1/s]
 MAX_STEERING_ANGLE = pi / 3  # [rad]
 
 """Maximum acceleration."""
-ACC_MAX = 8.0  # [m/s2]
+ACC_MAX = 20.0  # [m/s2]

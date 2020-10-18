@@ -6,13 +6,18 @@ from simulation.custom_types import CL, SL, NL, UL
 from simulation.lanes import StraightLane, SineLane
 from simulation.road import Road
 
-ON_RAMP_STARTS = [0, 260]
-OFF_RAMP_STARTS = [150, 410]
+
 
 RUNWAY_LENGTH = 5
 CONVERGE_LENGTH = 20
-MERGE_LENGTH = 60
+MERGE_LENGTH = 80
 BARRIER_LENGTH = 5
+
+RAMP_LENGTH = RUNWAY_LENGTH + CONVERGE_LENGTH + MERGE_LENGTH + BARRIER_LENGTH
+
+GAP = 5
+ON_RAMP_STARTS = [0, 250+GAP]
+OFF_RAMP_STARTS = [250-RAMP_LENGTH-GAP, 500-RAMP_LENGTH]
 
 SECTION_LENGTHS = [RUNWAY_LENGTH, CONVERGE_LENGTH, MERGE_LENGTH, BARRIER_LENGTH]
 
@@ -81,7 +86,7 @@ def onramp(road, x, y, idx, upstream):
 
     path_index = (runway_node, merge_destination_node, 0)
     path_start_pos = (xs[0], ys[0])
-    path_end_pos = (xs[2], ys[2])
+    path_end_pos = (xs[3], ys[3])
 
     runway = StraightLane([xs[0], ys[0]], [xs[1], ys[0]], (runway_node, converge_node, 0), [CL, CL],
                           is_source=True, speed_limit=RAMP_SPEED_LIMIT,
@@ -177,6 +182,8 @@ def merge_lanes(road, x_start=0, x_end=ROAD_LENGTH, y=Y_ROAD_START, nlanes=NUM_L
         n1_down = f'downstream_{ramp_type}{idx}_merge_start'
         n2_down = f'downstream_{ramp_type}{idx}_merge_end'
 
+        ######## Upstream ###########
+
         # Continuous Section
         up_1 = StraightLane([x_up, y], [x, y], (n_up, n1_up, 1), [CL, NL],
                             is_source=i == 0,
@@ -184,18 +191,19 @@ def merge_lanes(road, x_start=0, x_end=ROAD_LENGTH, y=Y_ROAD_START, nlanes=NUM_L
                             next_lane_index_options=[(n1_up, n2_up, 1)])
 
         # Striped Section
-        options = [(n2_up, f'upstream_{ramp_type}{idx+1}_merge_start', 1)]
         if ramp_type == 'offramp':
             if idx == 0:
-                options = [(n2_up, f'upstream_onramp{idx + 1}_merge_start', 1), (n1_up, n2_up, 0)]
+                options = [(n2_up, f'upstream_onramp{idx + 1}_merge_start', 1)]
             else:
-                options = [(n2_up, EAST_NODE, 1), (n1_up, n2_up, 0)]
+                options = [(n2_up, EAST_NODE, 1)]
         else:
             options = [(n2_up, f'upstream_offramp{idx}_merge_start', 1)]
         up_2 = StraightLane([x, y], [x + l, y], (n1_up, n2_up, 1), [SL, NL],
                             path_index=upstream_path_index, path_start_pos=upstream_path_start_pos, path_end_pos=upstream_path_end_pos,
                             next_lane_index_options=options)
 
+
+        ######## Downstream ###########
         # Continuous Section
         down_1 = StraightLane([x_down, y2], [x_end - x, y2], (n_down, n1_down, 1), [CL, NL],
                               is_source=i == 0,
@@ -205,9 +213,9 @@ def merge_lanes(road, x_start=0, x_end=ROAD_LENGTH, y=Y_ROAD_START, nlanes=NUM_L
         # Striped Section
         if ramp_type == 'offramp':
             if idx == 0:
-                options = [(n2_down, f'downstream_onramp{idx + 1}_merge_start', 1), (n1_down, n2_down, 0)]
+                options = [(n2_down, f'downstream_onramp{idx + 1}_merge_start', 1)]
             else:
-                options = [(n2_down, WEST_NODE, 1), (n1_down, n2_down, 0)]
+                options = [(n2_down, WEST_NODE, 1)]
         else:
             options = [(n2_down, f'downstream_offramp{idx}_merge_start', 1)]
 

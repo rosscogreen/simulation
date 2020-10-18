@@ -1,26 +1,25 @@
 import logging
-from functools import lru_cache
+from collections import defaultdict
 from typing import Optional
 import numpy as np
-
-from scipy.stats import hmean
-from numpy import mean
-
 from gym.utils import seeding
 
+from simulation import utils
 from simulation.car import Car
 from simulation.config import WEST_NODE, EAST_NODE
 from simulation.constants import CAR_LENGTH, MIN_INSERTION_GAP
 from simulation.custom_types import CL, SL
 from simulation.detector import Detectors
-from simulation.graphics import Cars
 from simulation.idm import IDM
 from simulation.lanes import AbstractLane
 from simulation.network import RoadNetwork
+from simulation.rendering import Cars
 
 logger = logging.getLogger(__name__)
 
 VERBOSE = 0
+
+WAIT_LIMIT = 30
 
 
 class Road(object):
@@ -31,7 +30,12 @@ class Road(object):
 
     def __init__(self, np_random=None):
         self.network: "RoadNetwork" = RoadNetwork()
+
         self.cars = Cars()
+        self.upstream_cars = Cars()
+        self.downstream_cars = Cars()
+
+        self.queues = {'upstream': defaultdict(int), 'downstream': defaultdict(int)}
 
         self.np_random = np_random or seeding.np_random()[0]
 
@@ -46,34 +50,50 @@ class Road(object):
         self.upstream_lane_count = 4
         self.downstream_lane_count = 4
 
+        self.steps_in_current_reversal = 0
+        self.total_steps_waiting_for_reversal = 0
+
+        self.outflow = 0
+        self.travel_time_log = []
+        self.speed_deviations_log = []
+
         # only redraw on changes to lane structure
         self.redraw = True
 
+    @property
+    def average_travel_time(self):
+        try:
+            return np.mean(self.travel_time_log)
+        except:
+            return 0
+
+    @property
+    def average_deviation_from_free_flow_speed(self):
+        try:
+            return np.mean(self.speed_deviations_log)
+        except:
+            return 0
+
     def step(self, dt: float):
         self.cars.update(dt)
-        self.update_position_state()
-        self.lane_reversal_step()
+        self.inflow()
 
-    def get_active_lanes(self, lanes):
-        return [lane for lane in lanes if not lane.forbidden]
-
-    def update_position_state(self):
         for car in self.cars:
-            self.detectors.update(car)
+            self.detectors.update_car(car)
+
+        if self.is_lane_reversal_in_progress:
+            self.lane_reversal_step()
 
     def initiate_lane_reversal(self, upstream: bool):
+        """ Starts a lane reversal in the given direction """
+
         i = self.upstream_lane_count
 
-        if upstream and i == 7:
-            return
-
-        if not upstream and i == 1:
+        if (upstream and i == 7) or (not upstream and i == 1):
             return
 
         self.is_lane_reversal_in_progress = True
-
         n = self.total_lane_count
-
         get_lane = self.network.get_lane
 
         if upstream:
@@ -84,17 +104,23 @@ class Road(object):
             self.new_forbidden_lane = get_lane((WEST_NODE, EAST_NODE, i))
 
         self.new_forbidden_lane.forbidden = True
+
         for c in self.cars_on_lane(self.new_forbidden_lane):
             c.set_mandatory_merge(to_right=False)
 
     def lane_reversal_step(self):
-        if not self.is_lane_reversal_in_progress:
+
+        if self.steps_in_current_reversal >= WAIT_LIMIT:
+            self.new_forbidden_lane.forbidden = False
+            self.reset_lane_reversal()
             return
 
+        # Are we still waiting for cars to vacate the lane
         if not self.is_lane_empty(self.new_forbidden_lane):
+            self.steps_in_current_reversal += 1
+            self.total_steps_waiting_for_reversal += 1
             return
 
-        # Redraw lines
         if self.new_active_lane.upstream:
             o, d, i = self.new_active_lane.index
             self.new_active_lane.line_types[0] = SL
@@ -106,57 +132,96 @@ class Road(object):
             self.network.get_lane((o, d, i + 1)).line_types[0] = SL
 
         self.redraw = True
+        # allow cars to enter on new lane
         self.new_active_lane.forbidden = False
-        self.new_active_lane = None
-        self.new_forbidden_lane = None
-        self.is_lane_reversal_in_progress = False
+        self.reset_lane_reversal()
 
+        # Recount lanes in each direction
         self.upstream_lane_count = sum(
                 [not lane.forbidden for lane in self.network.get_lanes(WEST_NODE, EAST_NODE)]) + 1
         self.downstream_lane_count = self.total_lane_count - self.upstream_lane_count
 
+    def reset_lane_reversal(self):
+        self.is_lane_reversal_in_progress = False
+        self.new_active_lane = None
+        self.new_forbidden_lane = None
+        self.steps_in_current_reversal = 0
+
     def is_lane_empty(self, lane: "AbstractLane"):
-        for car in self.cars:
+        cars = self.upstream_cars if lane.upstream else self.downstream_cars
+        for car in cars:
             if lane.same_lane(car.lane):
                 return False
         return True
 
-    def spawn(self, n: int, upstream: bool):
-        lanes = self.network.upstream_source_lanes if upstream else self.network.downstream_source_lanes
-        active_lanes = self.get_active_lanes(lanes)
+    def gap_to_first_car(self, lane):
+        first_car = self.first_car_on_lane(lane, merging=False)
+        if first_car is None:
+            return lane.path_length
+        return lane.s_path(first_car.position)
 
-        added = 0
-        for i in range(n):
-            self.np_random.shuffle(active_lanes)
-            for lane in active_lanes:
-                if self.spawn_car_on_lane(lane):
-                    added += 1
-                    break
+    def spawn(self, num_cars_to_spawn: int, upstream: bool):
+        source_lanes = self.network.get_source_lanes_for_direction(upstream)
+        self.np_random.shuffle(source_lanes)
 
+        for i in range(num_cars_to_spawn):
+            lane = source_lanes[i % len(source_lanes)]
+            self.add_car(lane)
 
-    def spawn_car_on_lane(self, lane: "AbstractLane", destination=None) -> bool:
-        fwd = self.first_car_on_lane(lane, merging=True)
+    def add_car(self, lane: "AbstractLane"):
+        direction = 'upstream' if lane.upstream else 'downstream'
+        if self.queues[direction][lane.index] > 0:
+            self.queues[direction][lane.index] += 1
+        else:
+            fwd = self.first_car_on_lane(lane)
+            speed = lane.speed_limit
 
-        speed = lane.speed_limit
+            if fwd:
+                gap = fwd.s_path
+                if gap < MIN_INSERTION_GAP:
+                    self.queues[direction][lane.index] += 1
+                    return
+                else:
+                    speed = IDM.calc_max_initial_speed(gap, fwd.speed, lane.speed_limit)
 
-        if fwd:
-            gap = fwd.s_path
-            if gap < MIN_INSERTION_GAP:
-                return False
-            speed = IDM.calc_max_initial_speed(gap=gap, fwd_speed=fwd.speed, speed_limit=speed)
+            car = Car.make_on_lane(road=self, lane=lane, speed=speed)
 
-        car = Car.make_on_lane(road=self, lane=lane, speed=speed)
+            self.cars.add(car)
 
-        if destination:
-            car.plan_route_to(destination)
+            if lane.upstream:
+                self.upstream_cars.add(car)
+            else:
+                self.downstream_cars.add(car)
 
-        return True
+    def inflow(self):
+        for direction, lane_indexes in self.queues.items():
+            for lane_index, queue_count in lane_indexes.items():
+                if queue_count > 0:
+                    lane = self.network.get_lane(lane_index)
+                    fwd = self.first_car_on_lane(lane)
+                    speed = lane.speed_limit
+
+                    if fwd is not None:
+                        gap = fwd.s_path
+                        if gap < MIN_INSERTION_GAP:
+                            continue
+                        speed = IDM.calc_max_initial_speed(gap, fwd.speed, lane.speed_limit)
+
+                    car = Car.make_on_lane(road=self, lane=lane, speed=speed)
+                    self.cars.add(car)
+                    if lane.upstream:
+                        self.upstream_cars.add(car)
+                    else:
+                        self.downstream_cars.add(car)
+
+                    self.queues[direction][lane_index] -= 1
 
     def cars_on_lane(self, lane, merging=False):
+        cars = self.upstream_cars if lane.upstream else self.downstream_cars
         if merging:
-            return [c for c in self.cars if lane.same_lane(c.lane) or lane.same_lane(c.target_lane)]
+            return [c for c in cars if lane.same_lane(c.lane) or lane.same_lane(c.target_lane)]
         else:
-            return [c for c in self.cars if lane.same_lane(c.lane)]
+            return [c for c in cars if lane.same_lane(c.lane)]
 
     def first_car_on_lane(self, lane, merging=False) -> Optional["Car"]:
         cars = self.cars_on_lane(lane, merging)
@@ -165,10 +230,8 @@ class Road(object):
         return min(cars, key=lambda c: c.s_path)
 
     def get_neighbours(self, car, lane=None):
-        lane = lane or car.lane
-        #s_me = lane.s(car.position)
-        s_me = lane.path_coordinates(car.position)[0]
-
+        lane = lane if lane is not None else car.lane
+        s_me = lane.s_path(car.position)
         cars = self.cars_on_lane(lane)
 
         s_fwd = 500
@@ -188,72 +251,18 @@ class Road(object):
         return fwd, bwd
 
     def get_fwd_car(self, car, lane=None):
-        lane = lane or car.lane
-        s_me = lane.path_coordinates(car.position)[0]
-        cars = [c for c in self.cars_on_lane(lane) if c.s_path >= s_me]
-        if not cars:
-            return None
-        return min(cars, key=lambda c: c.s_path)
-
-
-    def report(self):
-        upstream_highway_cars = []
-        upstream_onramp_cars = []
-        upstream_offramp_cars = []
-        downstream_highway_cars = []
-        downstream_onramp_cars = []
-        downstream_offramp_cars = []
-
-        for car in self.cars:
-            lane = car.lane
-            o, d, i = lane.index
-            if lane.upstream:
-                if lane.is_onramp:
-                    upstream_onramp_cars.append(car)
-                elif lane.is_offramp:
-                    upstream_offramp_cars.append(car)
-                elif i != 0:
-                    upstream_highway_cars.append(car)
-            else:
-                if lane.is_onramp:
-                    downstream_onramp_cars.append(car)
-                elif lane.is_offramp:
-                    downstream_offramp_cars.append(car)
-                elif i != 0:
-                    downstream_highway_cars.append(car)
-
-        return {
-            **self._highway_report(upstream_highway_cars, True),
-            **self._highway_report(downstream_highway_cars, False)
-        }
-
-    def _highway_report(self, cars, upstream):
-        updown = 'upstream' if upstream else 'downstream'
-        speeds = np.array([c.speed for c in cars]) * 3.6
-        target_speeds = np.array([c.target_speed for c in cars]) * 3.6
-
-        # spacings = np.array([c.lane_distance_to(c.fwd) for c in cars if c.fwd is not None])
-        # mean_spacing = mean(spacings)
-
-        lanes = self.upstream_lane_count if upstream else self.downstream_lane_count
-
-        total_length_km = (lanes * 500) / 1000
-        num_cars = len(cars)
-        density = num_cars / total_length_km
-
+        lane = lane if lane is not None else car.lane
+        s_me = lane.s_path(car.position)
+        cars = self.cars_on_lane(lane)
         try:
-            sms = hmean(speeds)
-        except:
-            sms = 0
+            return utils.first(cars, lambda car: car.s_path >= s_me)
+        except StopIteration:
+            return None
 
-        tms = mean(speeds)
+    def calc_total_queue_length(self):
+        total_queue_length = 0
+        for direction, lane_indexes in self.queues.items():
+            for lane_index, queue_length in lane_indexes.items():
+                total_queue_length += queue_length
 
-        return {
-            f'{updown} lanes':             lanes,
-            f'{updown} num cars':          num_cars,
-            f'{updown} density':           density,
-            f'{updown} time mean speed':   tms,
-            f'{updown} space mean speed':  sms,
-            f'{updown} mean target speed': mean(target_speeds),
-            # f'{updown} spacing m':              mean_spacing,
-        }
+        return total_queue_length

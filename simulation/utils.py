@@ -8,6 +8,7 @@ from simulation.custom_types import LaneIndex
 
 EPSILON = 0.01
 
+import json
 
 def format_metric_dictionary(d):
     s = []
@@ -120,6 +121,10 @@ def class_from_path(path):
     return class_object
 
 
+def get_active_lanes(lanes):
+    return [lane for lane in lanes if not lane.forbidden]
+
+
 def first(iterable, condition=lambda x: True):
     """
     Returns the first item in the `iterable` that
@@ -161,7 +166,7 @@ def is_same_road(lane_index_1: LaneIndex, lane_index_2: LaneIndex, same_lane: bo
     True
     """
     return lane_index_1[:2] == lane_index_2[:2] \
-        and (not same_lane or lane_index_1.index == lane_index_2.index)
+           and (not same_lane or lane_index_1.index == lane_index_2.index)
 
 
 def is_leading_to_road(lane_index_1: LaneIndex, lane_index_2: LaneIndex, same_lane: bool = False) -> bool:
@@ -175,7 +180,7 @@ def is_leading_to_road(lane_index_1: LaneIndex, lane_index_2: LaneIndex, same_la
     True
     """
     return lane_index_1.destination == lane_index_2.origin \
-        and (not same_lane or lane_index_1.index == lane_index_2.index)
+           and (not same_lane or lane_index_1.index == lane_index_2.index)
 
 
 def save_graph(road):
@@ -226,6 +231,32 @@ def respect_priorities(car1: "Car", car2: "Car") -> "Car":
         return car1
     else:  # The vehicle behind should yield
         return car1 if car1.lane_distance_to(car2) > car2.lane_distance_to(car1) else car2
+
+class NumpyEncoder(json.JSONEncoder):
+    """ Custom encoder for numpy data types """
+    def default(self, obj):
+        if isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
+                            np.int16, np.int32, np.int64, np.uint8,
+                            np.uint16, np.uint32, np.uint64)):
+
+            return int(obj)
+
+        elif isinstance(obj, (np.float_, np.float16, np.float32, np.float64)):
+            return float(obj)
+
+        elif isinstance(obj, (np.complex_, np.complex64, np.complex128)):
+            return {'real': obj.real, 'imag': obj.imag}
+
+        elif isinstance(obj, (np.ndarray,)):
+            return obj.tolist()
+
+        elif isinstance(obj, (np.bool_)):
+            return bool(obj)
+
+        elif isinstance(obj, (np.void)):
+            return None
+
+        return json.JSONEncoder.default(self, obj)
 
 
 if __name__ == "__main__":

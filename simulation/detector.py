@@ -1,36 +1,35 @@
-import numpy as np
-
-class Detector(object):
+class Detector:
 
     def __init__(self, x):
         self.x = x
-        self.car_count = 0
-        self.speed_sum = 0
+        self._n_cars = 0
+        self._total_speed = 0
         self.checked = set()
 
-        self.obs = {}
+        self.n_cars = 0
+        self.total_speed = 0
+        self.flow = 0
+        self.speed = 0
 
-    def update(self, car):
-        if id(car) not in self.checked:
-            self.car_count += 1
-            self.speed_sum += car.speed
-            self.checked.add(id(car))
+    def update(self, period):
+        self.n_cars = self._n_cars
+        self.total_speed = self._total_speed
+        self.flow = self._n_cars / period if period else 0
+        self.speed = (self._total_speed / self._n_cars) * 3.6 if self.n_cars else 0
+        self.reset()
+
+    def update_car(self, car):
+        _id = id(car)
+        if _id not in self.checked:
+            self._n_cars += 1
+            self._total_speed += car.speed
+            self.checked.add(_id)
 
     def reset(self):
-        self.speed_sum = 0
-        self.car_count = 0
+        self._total_speed = 0
+        self._n_cars = 0
         self.checked.clear()
 
-    def report(self, period):
-        flow = self.car_count * period if period else 0
-        speed = (self.speed_sum / self.car_count) * 3.6 if self.car_count else 0
-        obs = {
-            'flow':  flow,
-            'speed': speed
-        }
-        self.obs = obs
-        self.reset()
-        return obs
 
 class Detectors(object):
     detection_points = [10, 120, 250, 380, 490]
@@ -41,30 +40,19 @@ class Detectors(object):
         self.x_ranges = [(x - margin, x + margin, x) for x in self.detection_points]
         self.n = len(self.detection_points)
 
-    def update(self, car):
-        s = car.lane.path_coordinates(car.position)[0]
+    def update(self, period):
+        for detector in self.upstream_detectors.values():
+            detector.update(period)
+        for detector in self.downstream_detectors.values():
+            detector.update(period)
+
+    def update_car(self, car):
+        s = car.s_path
         upstream = car.lane.upstream
+
         for x1, x2, x in self.x_ranges:
             if x1 <= s <= x2:
                 if upstream:
-                    self.upstream_detectors[x].update(car)
+                    self.upstream_detectors[x].update_car(car)
                 else:
-                    self.downstream_detectors[x].update(car)
-
-    def report(self, period):
-        return {
-            **self._report(period, self.upstream_detectors, 'upstream'),
-            **self._report(period, self.downstream_detectors, 'downstream')
-        }
-
-    def _report(self, period, detectors, prefix):
-        detections = [d.report(period) for d in detectors.values()]
-
-        flows = [d['flow'] for d in detections]
-        speeds = [d['speed'] for d in detections]
-
-        return {
-            f'{prefix} avg flow': np.mean(flows),
-            f'{prefix} avg speed': np.mean(speeds),
-        }
-
+                    self.downstream_detectors[x].update_car(car)

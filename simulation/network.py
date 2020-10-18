@@ -70,6 +70,13 @@ class RoadNetwork(object):
     def get_forbidden_lanes(self, origin, destination) -> List[AbstractLane]:
         return [l for l in self.get_lanes(origin, destination) if l.forbidden]
 
+    def get_source_lanes_for_direction(self, upstream, shuffle=False):
+        all_source_lanes = self.upstream_source_lanes if upstream else self.downstream_source_lanes
+        active_source_lanes = [lane for lane in all_source_lanes if not lane.forbidden]
+        if shuffle:
+            np.random.shuffle(active_source_lanes)
+        return active_source_lanes
+
     @lru_cache()
     def get_lane(self, index: LaneIndex) -> Optional[AbstractLane]:
         """
@@ -96,13 +103,16 @@ class RoadNetwork(object):
         return [lane for lane in lanes if lane.index[2] == i]
 
     @lru_cache()
-    def get_lane_at_position(self, upstream: bool, i: int, x) -> AbstractLane:
+    def get_lane_at_position(self, upstream: bool, i: int, x) -> Optional[AbstractLane]:
         lanes = self.get_lanes_for_index(upstream, i)
         for lane in lanes:
             x1 = lane.start_pos[0] if upstream else lane.end_pos[0]
             x2 = lane.end_pos[0] if upstream else lane.start_pos[0]
-            if x1 <= x < x2:
+            if x1 <= x <= x2:
                 return lane
+
+        print(f'lane not found for upstream: {upstream}, index: {i}, x_pos: {x}')
+        return None
 
     @lru_cache()
     def side_lanes(self, lane: "AbstractLane", x_pos=None) -> List[AbstractLane]:
@@ -119,17 +129,18 @@ class RoadNetwork(object):
         upstream = lane.upstream
 
         if i == 1:
-            if lane.upstream:
+            if upstream:
                 right_o, right_d = WEST_NODE, EAST_NODE
             else:
                 right_o, right_d = EAST_NODE, WEST_NODE
-
-            if not lane.is_next_to_offramp:
-                left_o, left_d = None, None
+            left_o, left_d = None, None
 
         if i == 2:
-            left_lane = self.get_lane_at_position(upstream, 1, x_pos)
-            left_o, left_d, left_i = left_lane.index
+            left_lane = self.get_lane_at_position(upstream, i=1, x=x_pos)
+            if left_lane is None:
+                left_o, left_d = None, None
+            else:
+                left_o, left_d, left_i = left_lane.index
 
         try:
             lanes.append(self.graph[right_o][right_d][right_i])
@@ -254,7 +265,17 @@ class RoadNetwork(object):
             if len(lane.next_lane_index_options) == 1:
                 next_lane_index = lane.next_lane_index_options[0]
             else:
-                next_lane_index = random.choice(lane.next_lane_index_options)
+                o, d, i = lane.index
+
+                found = False
+                for o_, d_, i_ in lane.next_lane_index_options:
+                    if i == i_:
+                        next_lane_index = (o_, d_, i_)
+                        found = True
+                        break
+
+                if not found:
+                    next_lane_index = random.choice(lane.next_lane_index_options)
 
             next_lane = self.get_lane(next_lane_index)
 
@@ -273,48 +294,6 @@ class RoadNetwork(object):
                     continue
 
         return lane
-
-    def get_next_lane2(self, lane, route=None, position=None):
-        if lane.is_sink:
-            return lane
-
-        o, d, i = lane.index
-
-        graph = self.graph[d]
-        d_list = list(graph)
-
-        d_next = None
-
-        # Finished first leg of route -> remove it
-        if route and route[0][:2] == lane.index[:2]:
-            route.pop(0)
-
-        if route and d == route.origin:
-            d_next = route.destination
-
-        if d_next is None:
-            if len(d_list) == 1:
-                d_next = d_list[0]
-            else:
-                dest_options = [d for d in graph if i in graph[d]]
-                if dest_options:
-                    d_next = np.random.choice(dest_options)
-                else:
-                    d_next = np.random.choice(d_list)
-
-        try:
-            return graph[d_next][i]
-        except KeyError:
-            pass
-
-        if len(graph[d_next]) == 1:
-            i_next = list(graph[d_next])[0]
-            return graph[d_next][i_next]
-
-        if position is None:
-            position = lane.end_pos
-
-        return min(list(graph[d_next].values()), key=lambda lane: lane.distance(position))
 
     def __repr__(self):
         return str(self.graph)

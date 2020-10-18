@@ -10,4 +10,4 @@ from simulation.road import Road
 from simulation.network import RoadNetwork
 from simulation.idm import IDM
 from simulation.mobil import Mobil
-from simulation.graphics import Cars, EnvViewer
+

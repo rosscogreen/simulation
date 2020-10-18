@@ -5,7 +5,7 @@ from simulation.constants import CAR_LENGTH
 
 
 class IDM(object):
-    s0 = 2.0 + CAR_LENGTH
+    s0 = 3.0 + CAR_LENGTH
     """ Minimum distance [m] """
 
     T = 1.0
@@ -14,10 +14,10 @@ class IDM(object):
     a = 2.0
     """ Max acceleration [m/s^2] """
 
-    b = 4.0
+    b = 5.0
     """ Comfortable Deceleration [m/s^2] """
 
-    b_max = 8.0
+    b_max = 10.0
 
     b_emergency = 18.0
 
@@ -37,8 +37,8 @@ class IDM(object):
 
     @classmethod
     def d_star(cls, bwd: "Car", fwd: "Car"):
-        v0 = max(bwd.speed, 0)
-        v1 = max(fwd.speed, 0)
+        v0 = utils.not_zero(max(bwd.speed, 0))
+        v1 = utils.not_zero(max(fwd.speed, 0))
         dv = v0 - v1
         vdv = v0 * dv
 
@@ -50,57 +50,82 @@ class IDM(object):
         return cls.s0 + s
 
     @classmethod
-    def calc_acceleration(cls, bwd: "Car", fwd: "Car" = None) -> float:
+    def calc_acceleration_to_end(cls, bwd: "Car") -> float:
         if bwd is None:
             return 0
 
         v0 = max(bwd.speed, 0)
         v_star = utils.not_zero(getattr(bwd, "target_speed", 0))
 
-        acc = cls.a * (1 - np.power(v0 / v_star, cls.DELTA)) if v0 <= v_star else cls.a * (1 - v0/v_star)
+        s = bwd.s_remaining_on_path
 
-        b = cls.b
+        v1 = 0
+        dv = v0 - v1
+        vdv = v0 * dv
+
+        vT = v0 * cls.T
+        v_fwd = vdv / cls.AB_TERM
+
+        s_star = cls.s0 + max(0, vT * v_fwd)
+
+        acc = cls.a * (1 - np.power(v0 / v_star, cls.DELTA) - (s_star ** 2 / s ** 2))
+
+        return max(-2, acc)
+
+    @classmethod
+    def calc_acceleration(cls, bwd: "Car", fwd: "Car" = None) -> float:
+        if bwd is None:
+            return 0
+
+        v0 = utils.not_zero(max(bwd.speed, 0))
+        v_star = utils.not_zero(getattr(bwd, "target_speed", 0))
+
+        a = cls.a
+
+        if v0 < 1:
+            a = a * 3
+
+        acc = a * (1 - np.power(v0 / v_star, cls.DELTA)) if v0 <= v_star else a * (1 - v0 / v_star)
 
         noise = 0
 
         if fwd:
+            s_gap = utils.not_zero(bwd.lane_distance_to(fwd))
+
             same_lane = bwd.lane.index == fwd.lane.index
-            s_gap = bwd.lane_distance_to(fwd)
-
             if not same_lane:
-                is_on_left = 1 if fwd.lane.index[2] < bwd.lane.index[2] else -1
-                bias = fwd.right_bias * is_on_left
+                if bwd.lane.is_onramp or fwd.lane.is_onramp and v0 < 1 and s_gap < 8:
+                    noise = 0.3 * (np.random.random() - 0.5)
 
-                if bias >= 1:
-                    b = b/2
-                else:
-                    # if bwd.lane.is_onramp and bwd.s_remaining_on_lane < 15:
-                    #     return -cls.b_max
-                    # elif fwd.lane.is_onramp and fwd.s_remaining_on_lane < 15:
-                    #     return -cls.b_max
+            if same_lane and s_gap < cls.s0:
+                return -cls.b_max
 
-                    if bwd.lane.is_onramp and bwd.s_remaining_on_lane < 15:
-                        b = b*2
-                    elif fwd.lane.is_onramp and fwd.s_remaining_on_lane < 15:
-                        b = b*2
-
-                if s_gap < cls.s0:
-                    noise = 0.3
-
-            else:
-                if s_gap < cls.s0:
-                    return -cls.b_max
-
-            s_gap = utils.not_zero(s_gap)
             s_star = cls.d_star(bwd, fwd)
+            interactive_term = s_star ** 2 / s_gap ** 2
 
+            acc -= a * interactive_term
+
+            acc += noise
+
+        return max(-cls.b, acc)
+
+    @classmethod
+    def calc_acceleration2(cls, bwd: "Car", fwd: "Car" = None) -> float:
+        if bwd is None:
+            return 0
+
+        v0 = utils.not_zero(max(bwd.speed, 0))
+        v_star = utils.not_zero(getattr(bwd, "target_speed", 0))
+
+        acc = cls.a * (1 - np.power(v0 / v_star, cls.DELTA)) if v0 <= v_star else cls.a * (1 - v0 / v_star)
+
+        if fwd:
+            s_gap = utils.not_zero(bwd.lane_distance_to(fwd))
+            s_star = cls.d_star(bwd, fwd)
             interactive_term = s_star ** 2 / s_gap ** 2
             acc -= cls.a * interactive_term
 
-            acc_rnd = noise * (np.random.random() - 0.5)
-            acc += acc_rnd
-
-        return max(-b, acc)
+        return max(-cls.b, acc)
 
     @classmethod
     def calc_max_initial_speed(cls, gap: float, fwd_speed: float, speed_limit: float = None) -> float:

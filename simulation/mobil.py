@@ -6,7 +6,7 @@ from simulation.lanes import AbstractLane
 
 
 class Mobil(object):
-    B_SAFE = 4.0
+    B_SAFE = 5.0
     """ Max Safe Braking Deceleration """
 
     B_SAFE_MAX = 20.0
@@ -15,13 +15,11 @@ class Mobil(object):
     P = 0.1
     """ Politeness Factor """
 
-    MIN_INCENTIVE_THRESHOLD = 0.4
+    MIN_INCENTIVE_THRESHOLD = 0.3
     """ Min Acceleration Gain For Lane Change """
 
-    MIN_GAP = 3.0 + CAR_LENGTH
+    MIN_GAP = 1.0 + CAR_LENGTH
     """ Minimum Gap Needed For Lane Change """
-
-    BIAS_RIGHT = 0.2
 
     @classmethod
     def should_change(cls,
@@ -31,7 +29,8 @@ class Mobil(object):
                       bwd_old: "Car",
                       fwd_new: "Car",
                       bwd_new: "Car",
-                      right_bias: float = 0.0) -> bool:
+                      right_bias: float = 0.0,
+                      priority_car=None) -> bool:
         """
         MOBIL lane change model: Minimizing Overall Braking Induced by a Lane change
 
@@ -46,23 +45,19 @@ class Mobil(object):
         """
         # Is the maneuver unsafe for the new following vehicle?
 
-        calc_acc = IDM.calc_acceleration
+        calc_acc = IDM.calc_acceleration2
 
         is_right = 1 if lane.index[2] > me.lane.index[2] else -1
         bias = is_right * right_bias
 
-        # Just change
-        if bias >= 100:
-            return True
-
         # Is Enough Gap
 
-        if fwd_new:
+        if fwd_new is not None:
             fwd_gap = me.lane_distance_to(fwd_new, lane)
             if fwd_gap < cls.MIN_GAP:
                 return False
 
-        if bwd_new:
+        if bwd_new is not None:
             bwd_gap = bwd_new.lane_distance_to(me, lane)
             if bwd_gap < cls.MIN_GAP:
                 return False
@@ -77,16 +72,14 @@ class Mobil(object):
         if new_bwd_new_acc < -cls.B_SAFE:
             return False
 
-
-        # Wrong direction
-        if me.route and np.sign(lane.index[2] - me.target_lane.index[2]) != np.sign(
-                me.route[0][2] - me.target_lane.index[2]):
-            return False
-
         if bias >= 1:
             return True
 
         me_old_acc = calc_acc(bwd=me, fwd=fwd_old)
+        if priority_car is not None:
+            me_old_acc_priority = calc_acc(bwd=me, fwd=priority_car)
+            me_old_acc = min(me_old_acc, me_old_acc_priority)
+
         new_bwd_old_acc = calc_acc(bwd=bwd_new, fwd=fwd_new)
         old_bwd_new_acc = calc_acc(bwd=bwd_old, fwd=fwd_old)
         old_bwd_old_acc = calc_acc(bwd=bwd_old, fwd=me)
