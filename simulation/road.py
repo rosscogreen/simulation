@@ -30,6 +30,7 @@ class Road(object):
 
     def __init__(self, np_random=None):
         self.network: "RoadNetwork" = RoadNetwork()
+        self.np_random = np_random or seeding.np_random()[0]
 
         self.cars = Cars()
         self.upstream_cars = Cars()
@@ -37,21 +38,18 @@ class Road(object):
 
         self.queues = {'upstream': defaultdict(int), 'downstream': defaultdict(int)}
 
-        self.np_random = np_random or seeding.np_random()[0]
-
         # Lane reversal State
         self.is_lane_reversal_in_progress: bool = False
         self.new_active_lane: Optional["AbstractLane"] = None
         self.new_forbidden_lane: Optional["AbstractLane"] = None
+        self.steps_in_current_reversal = 0
+        self.total_steps_waiting_for_reversal = 0
 
         self.detectors = Detectors()
 
         self.total_lane_count = 8
         self.upstream_lane_count = 4
         self.downstream_lane_count = 4
-
-        self.steps_in_current_reversal = 0
-        self.total_steps_waiting_for_reversal = 0
 
         self.outflow = 0
         self.travel_time_log = []
@@ -160,13 +158,7 @@ class Road(object):
             return lane.path_length
         return lane.s_path(first_car.position)
 
-    def spawn(self, num_cars_to_spawn: int, upstream: bool):
-        source_lanes = self.network.get_source_lanes_for_direction(upstream)
-        self.np_random.shuffle(source_lanes)
 
-        for i in range(num_cars_to_spawn):
-            lane = source_lanes[i % len(source_lanes)]
-            self.add_car(lane)
 
     def add_car(self, lane: "AbstractLane"):
         direction = 'upstream' if lane.upstream else 'downstream'

@@ -297,9 +297,9 @@ class Viewer(object):
                 if key == K_ESCAPE:
                     self.env.close()
                 if key == K_UP:
-                    self.env.act(1)
+                    self.env._act(self.env.ADD_UPSTREAM)
                 elif key == K_DOWN:
-                    self.env.act(2)
+                    self.env._act(self.env.ADD_DOWNSTREAM)
 
     def close(self):
         pygame.quit()

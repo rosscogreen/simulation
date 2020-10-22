@@ -10,7 +10,7 @@ calc_mean_speed = lambda cars: np.mean(np.array([car.speed for car in cars]) * 3
 
 def get_imbalance(a, b):
     try:
-        return a / (a + b)
+        return ( a - b) / (a + b)
     except ZeroDivisionError:
         return 0
 
@@ -31,7 +31,7 @@ class State(object):
 
     @property
     def observation_space(self):
-        return spaces.Box(low=0, high=1, shape=(4,), dtype=np.float32)
+        return spaces.Box(low=-1, high=1, shape=(4,), dtype=np.float32)
 
     @property
     def initial_state(self):
@@ -79,5 +79,7 @@ class State(object):
         self.q_total = q_total
         self.q_up = q_up
         self.q_down = q_down
+
+
 
         return np.array([lane_ratio, v_imbalance, k_imbalance, q_imbalance])

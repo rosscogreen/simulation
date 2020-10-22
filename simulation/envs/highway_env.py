@@ -26,9 +26,9 @@ class HighwayEnv(BaseEnv):
     GAP_THRESHOLD = 0.1
 
     # Penalties
-    NO_REVERSE_LANE_PENALTY = -10
-    SLOW_REVERSE_PENALTY = -2
-    QUEUE_PENALTY = -1
+    NO_REVERSE_LANE_PENALTY = -0.9
+    SLOW_REVERSE_PENALTY = -0.4
+    QUEUE_PENALTY = -0.2
 
     # Rewards
     HIGH_SPEED_REWARD = 1
@@ -52,26 +52,22 @@ class HighwayEnv(BaseEnv):
         self.dt = 1 / self.simulation_frequency
         self.updates_per_step = int(self.simulation_frequency / self.policy_frequency)
         self.total_simulation_steps = self.total_steps * self.updates_per_step
+        self.experiment = params.get('experiment_id', "experiment_1")
 
         # Spaces
         self.state = State(self)
         self.action_space = spaces.Discrete(3)
         self.observation_space = self.state.observation_space
 
-        self._demand = Demand(self.np_random)
+        self._demand = Demand(self)
 
         self.previous_density = None
         self.previous_speed = None
         self.total_reward = 0
         self.road = None
 
-        self.save_history = params.get('save_history', False)
+        self.save_history = params.get('save_history', True)
         self.history_log = []
-
-    def _init_demand(self):
-        amplitude = self.params.get('demand_amplitude', 15000)
-        period = self.params.get('demand_periods', 2)
-        self._demand.generate(amplitude=amplitude, period=period, steps=self.total_simulation_steps + 1)
 
     def reset(self):
         """
@@ -87,22 +83,21 @@ class HighwayEnv(BaseEnv):
         self.history_log = []
         self.road = create_road()
         self.road.np_random = self.np_random
-        self._init_demand()
+        self._demand.generate()
         return self.state.initial_state
 
     def step(self, action: int = None):
         self.steps += 1
 
-        reward = self._density_reward(action)
-
         self._act(action)
+        reward = self._density_reward(action)
 
         self._simulate()
 
         obs = self._obs()
         # reward = self._reward(action)
         done = self._done()
-        info = self._info(action, obs, reward)
+        info = self._info(action, reward)
 
         return obs, reward, done, info
 
@@ -129,9 +124,8 @@ class HighwayEnv(BaseEnv):
     def _density_reward(self, action):
         nlanes_up = self.road.upstream_lane_count
         nlanes_down = self.road.downstream_lane_count
-        print(nlanes_up, nlanes_down)
 
-        if nlanes_up == 7 and action == self.ADD_UPSTREAM or nlanes_down == 7 and action == self.ADD_DOWNSTREAM:
+        if (nlanes_up == 7 and action == self.ADD_UPSTREAM) or (nlanes_down == 7 and action == self.ADD_DOWNSTREAM):
             return self.NO_REVERSE_LANE_PENALTY
 
         ncars_up = len(self.road.upstream_cars)
@@ -140,55 +134,67 @@ class HighwayEnv(BaseEnv):
         density_upstream = ncars_up / nlanes_up
         density_downstream = ncars_down / nlanes_down
 
-        diff = density_downstream - density_upstream
-        total = density_downstream + density_upstream
-        if total == 0:
+        try:
+            gap = (density_downstream - density_upstream) / (density_downstream + density_upstream)
+        except ZeroDivisionError:
             return 0
-        gap = diff / total
 
-        if density_upstream < self.DENSITY_THRESHOLD_PER_LANE and action == self.ADD_UPSTREAM:
-            return self.DENSITY_THRESHOLD_PER_LANE - density_upstream
-        elif density_downstream < self.DENSITY_THRESHOLD_PER_LANE and action == self.ADD_DOWNSTREAM:
-            return self.DENSITY_THRESHOLD_PER_LANE - density_downstream
+        current_diff = np.abs(density_downstream - density_upstream)
+
+        if gap >= self.GAP_THRESHOLD:
+
+            # Downstream is higher density -> Want to add downstream
+
+            if action == self.ADD_DOWNSTREAM:
+                return 0.1
+
+            best_diff = max(0.0, (ncars_down / (nlanes_down + 1)) - (ncars_up / (max(1.0, nlanes_up - 1))))
+
+            if action == self.HOLD:
+                try:
+                    return (best_diff - current_diff) / max(best_diff, current_diff)
+                except ZeroDivisionError:
+                    return 0
+
+            if action == self.ADD_UPSTREAM:
+                worst_diff = (ncars_down / (max(1.0, nlanes_down - 1))) - (ncars_up / (nlanes_up + 1))
+                try:
+                    return (best_diff - worst_diff) / max(best_diff, worst_diff)
+                except ZeroDivisionError:
+                    return 0
+
+        elif gap <= -self.GAP_THRESHOLD:
+
+            # Upstream is higher density -> Want to add upstream
+
+            if action == self.ADD_UPSTREAM:
+                return 0.1
+
+            best_diff = max(0.0, (ncars_up / (nlanes_up + 1)) - (ncars_down / (max(1, nlanes_down - 1))))
+
+            if action == self.HOLD:
+                try:
+                    return (best_diff - current_diff) / max(best_diff, current_diff)
+                except ZeroDivisionError:
+                    return 0
+
+            if action == self.ADD_DOWNSTREAM:
+                worst_diff = (ncars_up / (max(1, nlanes_up - 1))) - (ncars_down / (nlanes_down + 1))
+                try:
+                    return (best_diff - worst_diff) / max(best_diff, worst_diff)
+                except ZeroDivisionError:
+                    return 0
+
         else:
 
-            if gap >= self.GAP_THRESHOLD:
+            if action == self.HOLD:
+                return 0.1
 
-                # Downstream is higher density -> Want to add downstream
+            if action == self.ADD_UPSTREAM:
+                return (nlanes_down - 4) / 4
 
-                best_diff = (ncars_down / (nlanes_down + 1)) - (ncars_up / (max(1, nlanes_up - 1)))
-                if action == self.ADD_DOWNSTREAM:
-                    return 0
-                elif action == self.HOLD:
-                    return best_diff - diff
-                elif action == self.ADD_UPSTREAM:
-                    worst_diff = (ncars_down / (max(1, nlanes_down - 1))) - (ncars_up / (nlanes_up + 1))
-                    return best_diff - worst_diff
-
-            elif gap <= -self.GAP_THRESHOLD:
-
-                # Upstream is higher density -> Want to add upstream
-
-                print(nlanes_up, nlanes_down)
-                best_diff = (ncars_up / (nlanes_up + 1)) - (ncars_down / (max(1, nlanes_down - 1)))
-
-                if action == self.ADD_UPSTREAM:
-                    return 0
-                elif action == self.HOLD:
-                    return best_diff - diff
-                elif action == self.ADD_DOWNSTREAM:
-                    worst_diff = (ncars_up / (max(1, nlanes_up - 1))) - (ncars_down / (nlanes_down + 1))
-                    return best_diff - worst_diff
-
-            else:
-
-                # Dont want to reconfigure lanes
-                if action == self.ADD_UPSTREAM:
-                    return 4 - nlanes_down
-                elif action == self.HOLD:
-                    return 0
-                elif action == self.ADD_DOWNSTREAM:
-                    return 4 - nlanes_up
+            if action == self.ADD_DOWNSTREAM:
+                return (nlanes_up - 4) / 4
 
     def _reward(self, action):
         cars = self.road.cars
@@ -218,7 +224,6 @@ class HighwayEnv(BaseEnv):
         queue_cost = total_queue_length * self.QUEUE_PENALTY
 
         reward = density_cost + speed_reward + queue_cost
-        print(f'density: {density_cost}, speed: {speed_reward}, queue: {queue_cost}, total: {reward}')
 
         return reward
 
@@ -230,22 +235,73 @@ class HighwayEnv(BaseEnv):
             self.viewer.update_metrics()
 
     def _inflow(self):
-        n_up, n_down = self._demand.counts_for_step(step=self.simulation_steps, dt=self.dt)
-        self.road.spawn(n_up, upstream=True)
-        self.road.spawn(n_down, upstream=False)
+        if self.experiment == 'experiment_4':
+            self.inflow_exp4()
+            return
 
-    def _info(self, action, state, reward) -> Dict:
+        upstream_source_lanes = self.road.network.get_source_lanes_for_direction(True)
+        downstream_source_lanes = self.road.network.get_source_lanes_for_direction(False)
+
+        self.np_random.shuffle(upstream_source_lanes)
+        self.np_random.shuffle(downstream_source_lanes)
+
+        n_up, n_down = self._demand.counts_for_step
+
+        n_lanes_up = len(upstream_source_lanes)
+        for i in range(int(n_up)):
+            lane = upstream_source_lanes[i % n_lanes_up]
+            self.road.add_car(lane)
+
+        n_lanes_down = len(downstream_source_lanes)
+        for i in range(int(n_down)):
+            lane = downstream_source_lanes[i % n_lanes_down]
+            self.road.add_car(lane)
+
+    def inflow_exp4(self):
+        n_up_ramp2 = self._demand.generate_count(self._demand.upstream_bottleneck[self.simulation_steps])
+        n_down_ramp2 = self._demand.generate_count(self._demand.downstream_bottleneck[self.simulation_steps])
+        n_up, n_down = self._demand.counts_for_step
+
+        filter_highway = lambda lanes: [l for l in lanes if l.index[2] > 0]
+        filter_onramp = lambda lanes: [l for l in lanes if l.index[2] == 0 and 'onramp1_runway_start' in l.index[0]][0]
+
+        upstream_source_lanes = self.road.network.get_source_lanes_for_direction(True)
+        downstream_source_lanes = self.road.network.get_source_lanes_for_direction(False)
+        upstream_onramp = filter_onramp(upstream_source_lanes)
+        downstream_onramp = filter_onramp(downstream_source_lanes)
+        upstream_highway_source_lanes = filter_highway(upstream_source_lanes)
+        downstream_highway_source_lanes = filter_highway(downstream_source_lanes)
+
+        n = len(upstream_highway_source_lanes)
+        for i in range(int(n_up)):
+            lane = upstream_highway_source_lanes[i % n]
+            self.road.add_car(lane)
+
+        n = len(downstream_highway_source_lanes)
+        for i in range(int(n_down)):
+            lane = downstream_highway_source_lanes[i % n]
+            self.road.add_car(lane)
+
+        for i in range(int(n_up_ramp2)):
+            self.road.add_car(upstream_onramp)
+
+        for i in range(int(n_down_ramp2)):
+            self.road.add_car(downstream_onramp)
+
+    def _info(self, action, reward) -> Dict:
+        state = self.state
         self.total_reward += reward
-        demand_up, demand_down = self._demand.demand_for_step(self.steps)
-        state_dict = {k: v for k, v in zip(self.state.keys, state.tolist())}
         info = {
-            'step':              self.steps,
-            'action':            action,
-            'upstream_demand':   demand_up,
-            'downstream_demand': demand_down,
-            **state_dict,
-            'reward':            reward,
-            'total_reward':      self.total_reward
+            'step':               self.steps,
+            'action':             action,
+            'upstream_demand':    self._demand.demand_up,
+            'downstream_demand':  self._demand.demand_down,
+            'upstream_flow':      state.q_up,
+            'downstream_flow':    state.q_down,
+            'upstream_speed':     state.v_up,
+            'downstream_speed':   state.v_down,
+            'upstream_density':   state.k_up,
+            'downstream_density': state.k_down,
         }
 
         if self.save_history:

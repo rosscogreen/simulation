@@ -13,9 +13,9 @@ class HeuristicAgent(Agent):
         self.env = env
         self.min_gap = min_gap
 
-    def predict(self, state) -> Tuple:
+    def predict(self, state, deterministic=True) -> Tuple:
         env = self.env
-        demand_up, demand_down = env._demand.demand_for_step(env.simulation_steps)
+        demand_up, demand_down = env._demand.demand_for_step
         nlanes_up = env.road.upstream_lane_count
         nlanes_down = env.road.downstream_lane_count
 

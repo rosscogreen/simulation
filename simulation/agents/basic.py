@@ -9,7 +9,7 @@ class Agent(ABC):
     env = None
 
     @abstractmethod
-    def predict(self, obs) -> Tuple:
+    def predict(self, obs, deterministic=True) -> Tuple:
         raise NotImplementedError()
 
 
@@ -18,7 +18,7 @@ class NoneAgent(Agent):
     def __init__(self, env):
         self.env = env
 
-    def predict(self, obs) -> Tuple:
+    def predict(self, obs, deterministic=True) -> Tuple:
         return self.HOLD, None
 
 
@@ -27,5 +27,5 @@ class RandomAgent(Agent):
     def __init__(self, env):
         self.env = env
 
-    def predict(self, obs) -> Tuple:
+    def predict(self, obs, deterministic=True) -> Tuple:
         return self.env.action_space.sample(), None

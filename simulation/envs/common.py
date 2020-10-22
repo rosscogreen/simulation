@@ -71,41 +71,57 @@ class BaseEnv(gym.Env):
 
 class Demand:
 
-    def __init__(self, np_random=None):
-        self.np_random = np_random if np_random is not None else np.random
+    def __init__(self, env):
+        self.env = env
+        self.steps = env.total_simulation_steps
+        self.amplitude = 15000
+
         self.upstream = []
         self.downstream = []
+        self.upstream_bottleneck = []
+        self.downstream_bottleneck = []
 
-    def demand_up(self, i):
-        return self.upstream[i]
+    @property
+    def demand_up(self):
+        return self.upstream[self.env.simulation_steps]
 
-    def demand_down(self, i):
-        return self.downstream[i]
+    @property
+    def demand_down(self):
+        return self.downstream[self.env.simulation_steps]
 
-    def demand_for_step(self, step):
-        return self.demand_up(step), self.demand_down(step)
+    @property
+    def demand_for_step(self):
+        return self.demand_up, self.demand_down
 
-    def generate_count(self, demand, dt):
-        rate = (demand / 3600) * dt
-        return self.np_random.poisson(rate)
+    def generate_count(self, demand):
+        rate = (demand / 3600) * self.env.dt
+        return self.env.np_random.poisson(rate)
 
-    def counts_for_step(self, step, dt):
-        up = self.generate_count(self.demand_up(step), dt)
-        down = self.generate_count(self.demand_down(step), dt)
-        return up, down
+    @property
+    def counts_for_step(self):
+        return self.generate_count(self.demand_up), self.generate_count(self.demand_down)
 
-    def generate(self, amplitude, period, steps):
-        x = np.linspace(0, period * 2 * np.pi, steps)
+    def generate(self):
+        self.amplitude = self.env.params.get('demand_amplitude', 15000)
+        experiment = self.env.experiment
+        if experiment == 'experiment_1':
+            self.generate_experiement_1()
+        elif experiment == 'experiment_2':
+            self.generate_experiement_2()
+        elif experiment == 'experiment_3':
+            self.generate_experiement_3()
+        elif experiment == 'experiment_4':
+            self.generate_experiement_4()
+        else:
+            self.generate_experiement_1()
 
-        self.upstream = ((np.sin(x) + 1) / 2) * amplitude
-        self.downstream = amplitude - self.upstream
+    def generate_random(self):
+        freq = np.abs(self.env.np_random.normal(2, 1)) * 2 * np.pi
+        amplitude = self.env.np_random.normal(10000, 2000)
+        x = np.linspace(0, freq, self.steps)
 
-    def generate_random(self, steps):
-        freq = np.abs(self.np_random.normal(2, 1)) * 2 * np.pi
-        amplitude = self.np_random.normal(10000, 2000)
-        x = np.linspace(0, freq, steps)
-
-        self.upstream = self.np_random.normal(0.5, 0.1) * (np.sin(x) + self.np_random.normal(2, 0.2)) * amplitude
+        self.upstream = self.env.np_random.normal(0.5, 0.1) * (
+                    np.sin(x) + self.env.np_random.normal(2, 0.2)) * amplitude
         self.downstream = np.min(self.upstream) + (np.max(self.upstream) - self.upstream)
 
     def generate_from_file(self, filename, demand_multiplier):
@@ -113,3 +129,34 @@ class Demand:
         demand_per_step = df.values * demand_multiplier
         demand_per_step = demand_per_step.astype(int)
         return demand_per_step
+
+    def gen_sine(self, period, amplitude):
+        freq = period * 2 * np.pi
+        x = np.linspace(0, freq, self.steps)
+        y1 = ((np.sin(x) + 1) / 2) * amplitude
+        y2 = amplitude - y1
+        return y1, y2
+
+    def generate_experiement_1(self):
+        """ Peak hour traffic"""
+        self.upstream, self.downstream = self.gen_sine(period=1, amplitude=self.amplitude)
+
+    def generate_experiement_2(self):
+        """ Higher freq peak hour traffic"""
+        self.upstream, self.downstream = self.gen_sine(period=3, amplitude=self.amplitude)
+
+    def generate_experiement_3(self):
+        """ Random Traffic"""
+        self.upstream = self.get_random_series()
+        self.downstream = self.get_random_series()
+
+    def generate_experiement_4(self):
+        """ Bottleneck """
+        self.upstream = self.downstream = np.zeros([self.steps]) + 8000
+        self.upstream_bottleneck, self.downstream_bottleneck = self.gen_sine(period=2, amplitude=8000)
+        #self.upstream_bottleneck = self.downstream_bottleneck = np.zeros([self.steps]) + 6000
+
+    def get_random_series(self):
+        return pd.Series(
+                self.env.np_random.uniform(0, self.amplitude, self.env.total_steps)
+        ).repeat(self.env.updates_per_step).values

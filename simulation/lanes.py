@@ -4,7 +4,7 @@ from typing import Tuple, List
 
 import numpy as np
 
-from simulation.config import LANE_WIDTH, HIGHWAY_SPEED_LIMIT
+from simulation.config import LANE_WIDTH, HIGHWAY_SPEED_LIMIT, RAMP_SPEED_LIMIT
 from simulation.constants import CAR_LENGTH
 from simulation.custom_types import Vector, LineType, LaneIndex, NL
 
@@ -274,7 +274,7 @@ class SineLane(StraightLane):
                  pulsation: float = 0,
                  phase: float = 0,
                  forbidden: bool = False,
-                 speed_limit: float = 20,
+                 speed_limit: float = RAMP_SPEED_LIMIT,
                  is_source: bool = False,
                  is_sink: bool = False,
                  path_index: LaneIndex = None,

@@ -244,3 +244,7 @@ cython_debug/
 ./resources
 !/scripts/
 /scripts/videos/
+/results/evaluation_results.csv
+/results/history.csv
+/results/sensitivity.csv
+/images/
