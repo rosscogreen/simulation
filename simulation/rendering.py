@@ -240,7 +240,7 @@ class DetectorMetrics(Metrics):
 
 
 class Viewer(object):
-    DISPLAY_METRICS = False
+    DISPLAY_METRICS = True
 
     def __init__(self, env):
         self.env = env
@@ -282,9 +282,9 @@ class Viewer(object):
         self.screen.display(self.downstream_detectors.surface, (0, self.upstream_detectors.height + self.road.height))
 
         self.metrics.reset()
-        self.metrics.draw_metric(f'step: {self.env.current_step}', 5, 0)
-        self.metrics.draw_metric(f'upstream demand: {int(self.env.upstream_demand_for_step * 4)} veh/hr', 5, 6)
-        self.metrics.draw_metric(f'downstream demand: {int(self.env.downstream_demand_for_step * 4)} veh/hr', 5, 12)
+        self.metrics.draw_metric(f'step: {self.env.steps}', 5, 0)
+        self.metrics.draw_metric(f'upstream demand: {int(self.env.demand_up)} veh/hr', 5, 6)
+        self.metrics.draw_metric(f'downstream demand: {int(self.env.demand_down)} veh/hr', 5, 12)
         self.screen.display(self.metrics.surface,
                             (0, self.upstream_detectors.height + self.road.height + self.downstream_detectors.height))
 
@@ -305,7 +305,7 @@ class Viewer(object):
         pygame.quit()
 
     def get_image(self):
-        data = pygame.surfarray.array3d(self.road.surface)
+        data = pygame.surfarray.array3d(self.screen.surface)
         return np.moveaxis(data, 0, 1)
 
     def save(self):

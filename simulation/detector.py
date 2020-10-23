@@ -14,7 +14,7 @@ class Detector:
     def update(self, period):
         self.n_cars = self._n_cars
         self.total_speed = self._total_speed
-        self.flow = self._n_cars / period if period else 0
+        self.flow = (self._n_cars * 3600) if period else 0
         self.speed = (self._total_speed / self._n_cars) * 3.6 if self.n_cars else 0
         self.reset()
 

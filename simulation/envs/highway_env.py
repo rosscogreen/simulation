@@ -69,6 +69,7 @@ class HighwayEnv(BaseEnv):
         self.save_history = params.get('save_history', True)
         self.history_log = []
 
+
     def reset(self):
         """
             Reset the environment to it's initial configuration
@@ -84,6 +85,7 @@ class HighwayEnv(BaseEnv):
         self.road = create_road()
         self.road.np_random = self.np_random
         self._demand.generate()
+        self.frames = []
         return self.state.initial_state
 
     def step(self, action: int = None):
@@ -92,6 +94,7 @@ class HighwayEnv(BaseEnv):
         self._act(action)
         reward = self._density_reward(action)
 
+        self._update_rendering()
         self._simulate()
 
         obs = self._obs()
@@ -310,6 +313,14 @@ class HighwayEnv(BaseEnv):
         return info
 
     @property
+    def demand_up(self):
+        return self._demand.demand_up
+
+    @property
+    def demand_down(self):
+        return self._demand.demand_down
+
+    @property
     def history(self):
         return pd.DataFrame(self.history_log)
 
@@ -320,6 +331,9 @@ class HighwayEnv(BaseEnv):
             'average_deviation_from_free_flow_speed_kmh': self.road.average_deviation_from_free_flow_speed * 3.6,
             'total_throughput':                           self.road.outflow
         }
+
+    def print_results(self):
+        print(f'')
 
 
 register(id='highway-v0', entry_point='simulation.envs:HighwayEnv')

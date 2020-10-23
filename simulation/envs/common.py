@@ -29,6 +29,9 @@ class BaseEnv(gym.Env):
 
         self.seed()
 
+        self.frames = []
+
+
     def seed(self, seed: int = None) -> List[int]:
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
@@ -49,6 +52,7 @@ class BaseEnv(gym.Env):
 
         if mode == 'rgb_array':
             image = self.viewer.get_image()
+            self.frames.append(image)
             return image
 
         self.should_update_rendering = False
@@ -74,7 +78,7 @@ class Demand:
     def __init__(self, env):
         self.env = env
         self.steps = env.total_simulation_steps
-        self.amplitude = 15000
+        self.amplitude = 10000
 
         self.upstream = []
         self.downstream = []
@@ -102,7 +106,7 @@ class Demand:
         return self.generate_count(self.demand_up), self.generate_count(self.demand_down)
 
     def generate(self):
-        self.amplitude = self.env.params.get('demand_amplitude', 15000)
+        self.amplitude = self.env.params.get('demand_amplitude', self.amplitude)
         experiment = self.env.experiment
         if experiment == 'experiment_1':
             self.generate_experiement_1()
