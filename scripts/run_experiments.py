@@ -9,8 +9,8 @@ from stable_baselines3 import DQN
 EPISODES = 10
 SEEDS = [1, 5, 3, 8, 67, 23, 32, 54, 17, 78]
 
-MODEL_PATH = Path('models') / 'dqn_model'
-RESULTS_PATH = Path('results')
+MODEL_PATH = Path('../models') / 'dqn_model'
+RESULTS_PATH = Path('../results')
 EVALUATION_RESULTS_FILENAME = RESULTS_PATH / 'evaluation_results.csv'
 HISTORY_FILENAME = RESULTS_PATH / 'history.csv'
 SENSITIVITY_FILENAME = RESULTS_PATH / 'sensitivity.csv'

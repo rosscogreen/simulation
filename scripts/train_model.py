@@ -10,7 +10,7 @@ import simulation
 
 TRAINING_STEPS = 10000
 
-MODELS_DIR_PATH = Path('models')
+MODELS_DIR_PATH = Path('../models')
 MODEL_NAME = 'dqn_model'
 MODEL_PATH = MODELS_DIR_PATH / MODEL_NAME
 LOG_PATH = MODELS_DIR_PATH / 'logs/'

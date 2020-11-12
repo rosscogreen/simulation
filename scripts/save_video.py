@@ -4,15 +4,15 @@ from tqdm import trange
 from pathlib import Path
 import sys
 
-sys.path.insert(0, './scripts/')
+sys.path.insert(0, '/')
 
 from stable_baselines3 import DQN
 
 import simulation
 from simulation.agents import NoneAgent, HeuristicAgent, RandomAgent
 
-MODEL_PATH = Path('models') / 'dqn_model'
-BASE_PATH = Path('.')
+MODEL_PATH = Path('../models') / 'dqn_model'
+BASE_PATH = Path('..')
 EVALUATION_RESULTS_FILENAME = BASE_PATH / 'evaluation_results.csv'
 HISTORY_FILENAME = BASE_PATH / 'history.csv'
 
