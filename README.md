@@ -27,6 +27,12 @@ Contains trained DQN model
 ```
 Contains results from experiments
 
+
+```
+/example_results
+```
+Shows some example results for a single run of the experiment
+
 ```
 /videos
 ```
