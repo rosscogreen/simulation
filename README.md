@@ -1,8 +1,8 @@
-# Masters of Data Science Research Project
+# A Reinforcement Learning Approach to Dynamic Lane Reversal
+## UWA: Masters of Data Science Research Project 
 
-## A Reinforcement Learning Approach to Dynamic Lane Reversal
 
-### Simulation
+### Implementation Code
 
 #### Directory
 ```
@@ -38,7 +38,9 @@ Shows some example results for a single run of the experiment
 ```
 Contains videos of running simulation
 
-### Example
+### Examples
+
+#### Run Simulation using trained model
 
 ```python
 import gym
@@ -74,5 +76,46 @@ env.close()
 # Result Dataframes
 evaluation_results_dataframe = env.evaluate
 environment_metrics_history_dataframe = env.history
+
+```
+
+#### Train Agent
+```python
+import gym
+from stable_baselines3 import DQN
+from stable_baselines3.dqn import MlpPolicy
+from stable_baselines3.common.callbacks import CheckpointCallback
+from stable_baselines3.common.monitor import Monitor
+
+import simulation
+
+TRAINING_STEPS = 1000
+
+MODEL_PATH = "models/dqn_model"
+LOG_PATH = "models/logs"
+CHECKPOINT_PATH = "models/checkpoints"
+MONITOR_PATH = "models/monitoring"
+
+params = {
+    'simulation_frequency': 15,
+    'policy_frequency':     0.5,
+    'demand_amplitude':     15000,
+    'total_steps':          100,
+}
+
+env = gym.make('highway-v0', **params)
+
+checkpoint_callback = CheckpointCallback(save_freq=1000,
+                                         save_path=CHECKPOINT_PATH,
+                                         name_prefix=MODEL_NAME,
+                                         verbose=1)
+env = Monitor(env, MONITOR_PATH)
+
+model = DQN(MlpPolicy, env, verbose=1, tensorboard_log=LOG_PATH, learning_starts=100, target_update_interval=500)
+
+model.learn(total_timesteps=TRAINING_STEPS, callback=checkpoint_callback, log_interval=4)
+
+# Save model
+model.save(MODEL_PATH)
 
 ```
